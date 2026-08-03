@@ -78,6 +78,7 @@ def _verify_extracted_candidate(
     common = _environment(
         PYTHON_BIN=sys.executable,
         PIP_CACHE_DIR=DEPENDENCY_CACHE / "pip",
+        MPLCONFIGDIR=DEPENDENCY_CACHE / "matplotlib",
         FS_FILTERLAB_VENV_DIR=venv,
     )
     _run(["sh", "install.sh"], cwd=release_root, environment=common)
@@ -85,7 +86,7 @@ def _verify_extracted_candidate(
     python = venv / "bin/python"
     _run([str(python), "-m", "pip", "check"], cwd=release_root, environment=common)
     _run(
-        [str(python), "scripts/generate_dependency_notices.py", "--check"],
+        [str(python), "scripts/generate_dependency_notices.py", "--runtime-check"],
         cwd=release_root,
         environment=common,
     )

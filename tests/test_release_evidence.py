@@ -78,6 +78,21 @@ def test_dependency_inventory_has_not_drifted() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_installed_runtime_matches_the_committed_inventory() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_dependency_notices.py",
+            "--runtime-check",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_bundled_license_and_vendor_notices_are_retained() -> None:
     assert (ROOT / "LICENSE").is_file()
     assert (ROOT / "data/LICENSE").is_file()

@@ -304,12 +304,41 @@ def serialized_outputs() -> tuple[str, str, dict]:
     return json_text, render_notice(inventory), inventory
 
 
+def verify_installed_runtime() -> int:
+    committed = json.loads(JSON_PATH.read_text(encoding="utf-8"))
+    runtime_roots = requirement_roots(ROOT / "requirements.txt")
+    expected_versions = constraints()
+    installed = dependency_closure(runtime_roots)
+    actual = [
+        record(name, distribution, name in runtime_roots, expected_versions)
+        for name, distribution in sorted(installed.items())
+    ]
+    if actual != committed["runtime"]:
+        raise SystemExit("Installed runtime dependency or license evidence drift")
+    if committed["unresolved_runtime"]:
+        raise SystemExit(
+            "Unresolved runtime license evidence: "
+            + ", ".join(committed["unresolved_runtime"])
+        )
+    print(f"Installed runtime licenses: {len(actual)} distributions, 0 unresolved")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--check", action="store_true", help="fail if committed inventories drift"
     )
+    parser.add_argument(
+        "--runtime-check",
+        action="store_true",
+        help="verify an installed runtime without requiring test-only packages",
+    )
     args = parser.parse_args()
+    if args.check and args.runtime_check:
+        parser.error("--check and --runtime-check are mutually exclusive")
+    if args.runtime_check:
+        return verify_installed_runtime()
     json_text, notice_text, inventory = serialized_outputs()
     if inventory["unresolved_runtime"]:
         raise SystemExit(
