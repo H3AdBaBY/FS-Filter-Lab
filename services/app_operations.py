@@ -133,7 +133,11 @@ def initialize_application_data():
     )
     
     if not filter_collection.filters:
-        handle_error("No filter data found. Please add .tsv files to data/filters_data", stop_execution=True)
+        handle_error(
+            "No valid filter data found. Restore bundled data/filters_data or "
+            "import filters into user_data/filters_data.",
+            stop_execution=True,
+        )
         return None
         
     # Load QE data
@@ -276,7 +280,7 @@ def rebuild_application_cache(cache_dir: Path) -> bool:
         True if cache was successfully rebuilt, False otherwise
     """
     if not cache_dir.exists():
-        return False
+        return True
         
     success = True
     for f in cache_dir.glob("*"):

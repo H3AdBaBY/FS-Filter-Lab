@@ -15,6 +15,7 @@ a single location for configuration changes.
 """
 
 # Standard library imports
+import os
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Callable, Any, Tuple, Optional
@@ -42,7 +43,7 @@ DEFAULT_ILLUMINANT = "AM1.5_Global_REL"      # Standard solar spectrum reference
 DEFAULT_HEX_COLOR = "#838383"                # Default filter color (neutral gray)
 
 # Cache configuration
-CACHE_DIR = Path("cache")  # Directory for storing cached computation results
+CACHE_DIR = Path(os.environ.get("FS_FILTERLAB_CACHE_DIR", "cache"))
 
 # RGB channel configuration
 QE_COLORS = {
@@ -149,7 +150,11 @@ UI_INFO_MESSAGES = {
     'no_illuminant': "ℹ️ No illuminant loaded.",
     'no_reflectors': "No reflectance spectra found.",
     'qe_illuminant_required': "Select a QE & illuminant profile to compute white balance.",
-    'color_compute_failed': "Unable to compute color for selected surface"
+    'color_compute_failed': "Selected-surface preview unavailable: the common sensor response is zero or invalid.",
+    'select_qe': "Select a Sensor QE Profile to show sensor response and reflector previews.",
+    'select_illuminant': "Select a Scene Illuminant to show weighted metrics, sensor response, and reflector previews.",
+    'no_valid_reflectors': "Reflector previews unavailable: no valid reflectance spectra were loaded.",
+    'zero_preview': "Illustrative preview unavailable: the common sensor response is zero or invalid.",
 }
 
 UI_WARNING_MESSAGES = {

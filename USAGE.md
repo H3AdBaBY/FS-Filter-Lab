@@ -1,91 +1,104 @@
-# FS FilterLab - Usage Guide
+# FS FilterLab usage guide
 
-This guide walks you through using FS FilterLab for optical analysis.
+## Start the application
 
-## 🚀 Getting Started
+Install once with `./install.sh` on Linux/macOS or `install.bat` on Windows.
+Launch later with `./run.sh` or `start.bat`. The app is available at
+<http://localhost:8501> by default.
 
-### 1. Launch the Application
-- **Windows**: Double-click `start.bat`
-- **Linux/macOS**: Run `./run.sh`
-- **Manual**: Run `streamlit run app.py`
+## Named filter workflow
 
-### 2. Basic Interface Overview
-- **Sidebar**: Filter selection, settings, and controls
-- **Main Area**: Charts, analysis results, and data displays
-- **Status Messages**: Feedback and error information at the top
+1. In **Filter Plotter**, choose filters under **Select filters to plot**.
+2. Open **Set Filter Stack Counts** to repeat a filter from one to five times.
+   A stack multiplies the selected transmissions.
+3. Open **Extras** and select a **Sensor QE Profile** and **Scene Illuminant**.
+   Filter transmission remains usable if either is unavailable, but dependent
+   metrics, sensor response, and previews remain hidden with an explanation.
+4. Use **Settings** to choose logarithmic stop view and plotted R, G, and B
+   traces. Hiding a trace does not change the scientific calculation.
+5. Toggle **Apply Sensor-Response Balance** above the sensor chart if wanted.
+6. Enable **Show Channel Mixer** to edit the 3×3 linear mixer. Reset restores
+   identity coefficients while leaving the mixer enabled.
+7. Generate the PNG report only after the current controls are final. A state
+   change suppresses a stale download.
 
-## 📊 Basic Workflow
+The calculation order is linear sensor response, optional balance, optional
+matrix mixing, then display conversion. Analytical negative or above-unity
+mixer output is retained; only display pixels clamp at the display boundary.
 
-### Step 1: Select Filters
-1. In the sidebar, use the **"Select filters to plot"** dropdown
-2. Choose one or more filters from the list
-3. Selected filters appear as colored tags
-4. Use the **search box** to quickly find specific filters
+## Advanced search
 
-### Step 2: Configure Filter Stack
-1. If multiple filters are selected, they automatically stack (multiply)
-2. Use **"Set Filter Stack Counts"** to specify how many of each filter
-3. Example: 2x UV Filter + 1x Polarizer = specific transmission curve
+Enable **Show Advanced Search** in the sidebar.
 
-### Step 3: Choose Analysis Parameters
-1. **Camera QE**: Select quantum efficiency profile (or use Default)
-2. **Illuminant**: Choose light source (AM1.5 Global is typical daylight)
-3. **Display Options**: Toggle RGB channels, log scale, white balance
+- Manufacturer values are exact metadata values.
+- Transmission bounds are inclusive percentages at an integer wavelength from
+  300 through 1100 nm.
+- Filters whose transmission is unknown at that wavelength are excluded from a
+  numeric range and reported separately.
+- Text, transmission, and rainbow sorts use deterministic tie-breakers.
+- Open a result's details to select it. **Done** appends checked results to the
+  primary selection without duplicates; **Cancel** leaves it unchanged.
 
-### Step 4: Analyze Results
-1. **Main transmission chart** shows the combined filter response
-2. **RGB sensor response** shows how the filtered light affects camera channels
-3. **Metrics panels** show quantitative analysis (effective stops, white balance)
-4. **Deviation metrics** compare to target profiles (if loaded)
+## CSV import
 
-## 🔍 Advanced Features
+Open **Settings**, then **WebPlotDigitizer .csv importers**. CSV means a numeric
+comma- or semicolon-separated file with an optional single header row.
+Wavelengths are nanometres.
 
-### Advanced Filter Search
-1. Click **"Show Advanced Search"** in the sidebar
-2. **Filter by Manufacturer**: Select brands to narrow choices
-3. **Transmission at Wavelength**: Find filters with specific properties at target wavelengths
-4. **Color Sorting**: Sort by rainbow color for visual selection
+### Filter
 
-### Custom Data Import
-1. Click **"Show Import Data"** in the sidebar
-2. **Upload Filter Data**: Import custom TSV filter files
-3. **Upload QE Data**: Add camera sensor profiles
-4. **Upload Illuminant**: Add custom light sources
-5. **Upload Reflectance**: Add surface material data
+Columns: `wavelength_nm, transmission`. Choose whether transmission is a
+`fraction` (0–1) or `percent` (0–100). Lower and upper constant extrapolation
+are independent and off by default. Extrapolated samples remain masked and are
+shown distinctly.
 
-### Report Generation
-1. Select your desired filter configuration
-2. Choose the camera profile for analysis
-3. Click **"📊 Generate Report"** in the sidebar
-4. Download the generated PNG report with **"⬇️ Download Last Report"**
+### Illuminant
 
-## 📈 Understanding the Charts
+Columns: `wavelength_nm, relative_power`. Values must be non-negative. The
+importer explicitly peak-normalizes the serialized curve to 100. No physical
+radiometric unit is inferred.
 
-### Transmission Chart
-- **X-axis**: Wavelength (300-1100 nm)
-- **Y-axis**: Transmission (0-100% or logarithmic)
-- **Multiple Lines**: Individual filters in stack
-- **Combined Line**: Final result of all filters
+### Camera QE
 
-### RGB Response Chart
-- **Red/Green/Blue Lines**: How each camera channel responds
-- **Combined Effect**: Shows color shifts and intensity changes
-- **White Balance**: Correction factors for neutral response
+Columns: `wavelength_nm, R, G, B`. Choose `fraction` or `percent`. All three
+aligned channels are required. Values outside measured support remain unknown.
 
-### Sparkline Plots
-- **Miniature Charts**: Quick visual summary in selection lists
-- **Filter Overview**: Rapid identification of filter characteristics
-- **Comparison Tool**: Easy visual comparison between options
+### Reflectance
 
+Columns: `wavelength_nm, reflectance`. Choose `fraction` or `percent` and the
+two optional extrapolation directions. Absorption input is rejected because no
+approved measurement model converts it to reflectance.
 
-## ⚙️ Settings and Preferences
+The importer reports normalization, clipping, sorting, extrapolation, and
+unknown-value diagnostics. Successful imports are atomically stored beneath
+`user_data/`, appear after one rerun, and never overwrite bundled `data/` or an
+existing identity. Use `FS_FILTERLAB_USER_DATA_DIR` to choose another local
+user-data root.
 
-### Display Options
-- **Log View**: Toggle between linear and logarithmic transmission scales
-- **RGB Channels**: Show/hide individual red, green, blue responses
-- **Apply White Balance**: Enable automatic white balance correction
+## Reflector previews
 
+The four named leaf surfaces use a fixed 2×2 order and one shared exposure. A
+selected surface uses that exposure when available; otherwise its caption says
+that independent auto-exposure was used. Balance and the channel mixer apply to
+both preview types. RGB chart visibility does not.
 
----
+Every preview is an **illustrative sensor response, not calibrated color**. It
+is not a CIE colorimetric prediction, camera-profile conversion, or photograph.
+Missing dependencies, invalid reflectance, empty overlap, and valid zero
+response are reported rather than replaced by fabricated patches.
 
-Need more help? Check the detailed README.md or create an issue on GitHub!
+## Troubleshooting
+
+- Environment missing or wrong Python: rerun the installer with Python 3.12.
+- Bundled data missing: initialize the source checkout's data submodule or use
+  a release archive populated with `data/`.
+- Import collision: change the metadata identity; v1 does not overwrite.
+- Data was changed outside the app: use **Rebuild Cache**.
+- Report failed: the prior artifact is removed, so correct the stated issue and
+  generate again.
+
+## Complete verification
+
+```bash
+PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
+```

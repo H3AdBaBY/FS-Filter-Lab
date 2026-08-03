@@ -121,9 +121,61 @@ def is_dark_color(hex_color: str) -> bool:
         True if the color is dark
     """
     hex_color = hex_color.lstrip('#')
-    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-    luminance = 0.2126*r + 0.7152*g + 0.0722*b
-    return luminance < 128
+    channels = [int(hex_color[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    linear = [
+        value / 12.92
+        if value <= 0.04045
+        else ((value + 0.055) / 1.055) ** 2.4
+        for value in channels
+    ]
+    luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    white_contrast = 1.05 / (luminance + 0.05)
+    black_contrast = (luminance + 0.05) / 0.05
+    return white_contrast >= black_contrast
+
+
+def apply_responsive_layout() -> None:
+    """Apply a small responsive fallback without changing page structure."""
+    st.markdown(
+        """
+        <style>
+        html, body, [data-testid="stAppViewContainer"] { max-width: 100%; }
+        [data-testid="stPlotlyChart"], [data-testid="stImage"] { max-width: 100%; }
+        button[data-testid="stExpandSidebarButton"],
+        [data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"] {
+          font-size: 0;
+          width: auto;
+        }
+        button[data-testid="stExpandSidebarButton"]::after,
+        [data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"]::after {
+          font-size: 0.875rem;
+          line-height: 1.25;
+        }
+        button[data-testid="stExpandSidebarButton"]::after {
+          content: "Open filter controls";
+        }
+        [data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"]::after {
+          content: "Close filter controls";
+        }
+        @media (max-width: 768px) {
+          [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          }
+          [data-testid="column"] {
+            min-width: min(100%, 18rem) !important;
+            flex: 1 1 100% !important;
+            width: 100% !important;
+          }
+          [data-testid="stDataFrame"], [data-testid="stTable"] {
+            max-width: 100%;
+            overflow-x: auto;
+          }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def is_valid_hex_color(hex_code: str) -> bool:

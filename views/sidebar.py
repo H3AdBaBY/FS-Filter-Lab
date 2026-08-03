@@ -40,6 +40,8 @@ def filter_selection(
     if pending:
         current_selection = list(dict.fromkeys(current_selection + list(pending)))
         st.session_state["selected_filters"] = current_selection
+    elif "selected_filters" not in st.session_state:
+        st.session_state["selected_filters"] = current_selection
     if st.session_state.pop("_close_advanced_search", False):
         st.session_state["show_advanced_search"] = False
 
@@ -50,7 +52,6 @@ def filter_selection(
     selected = st.sidebar.multiselect(
         UI_LABELS['select_filters'],
         options=all_options,
-        default=current_selection,
         key="selected_filters",
     )
 

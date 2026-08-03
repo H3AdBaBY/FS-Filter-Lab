@@ -356,6 +356,11 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
     mv = np.nanmax(rgb_matrix)
     if mv > 0:
         rgb_matrix /= mv
+    # Analytical mixer excursions remain in the plotted traces; the decorative
+    # RGB strip is a display boundary and must supply valid display pixels.
+    rgb_matrix = np.nan_to_num(
+        np.clip(rgb_matrix, 0.0, 1.0), nan=0.0, posinf=1.0, neginf=0.0
+    )
     
     display_max = max(maxresp, 1.0)
     extent = [

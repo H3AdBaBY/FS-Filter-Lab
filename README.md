@@ -1,98 +1,117 @@
 # FS FilterLab
 
-A web-based tool for analyzing and visualizing optical filter stacks, quantum efficiency curves, and illuminant spectra. Built with focus on Full-Spectrum photography. 
-
-Credit: 21.09.2025 Refactor based on 01luna's fork. Contains Vegetation Color Preview feature she created
+FS FilterLab is a local Streamlit application for comparing optical filters,
+filter stacks, camera quantum-efficiency (QE) curves, illuminants, and surface
+reflectance spectra. Reflector patches are illustrative sensor responses, not
+calibrated color predictions.
 
 ## Features
 
-- Combine multiple filters and see the resulting transmission
-- View and compare RGB channel responses
-- Analyze how filters affect different cameras and light sources
-- Import your own filter, QE, or illuminant data (TSV format)
-- Export analysis as PNG images
-- Search and filter by manufacturer, color, or wavelength
-- Simple caching for faster data loading
+- Combine filters, including repeated filters, on the 300–1100 nm analysis grid.
+- Inspect transmission, effective light loss, RGB sensor response, optional
+  sensor-response balance, and an optional 3×3 channel mixer.
+- Search filters by manufacturer, name/number, color, or transmission at a
+  selected wavelength.
+- Import filter, QE, illuminant, and reflectance CSV data into separate local
+  user storage without modifying bundled datasets.
+- Export a PNG report derived from the same workflow snapshot as the visible
+  analysis.
 
-## Quick Start
+## Install and run
 
-### Requirements
-- Python 3.12
-- pip
+Requirements: Python 3.12 and `pip`. Git is needed for a source checkout whose
+data submodule has not been initialized; it is not needed for a release archive
+that already contains `data/`.
 
-### Install
-
-1. Clone this repository,
-   Or download the latest Release   
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   Or use `install.bat` (Windows) or `install.sh` (Linux/macOS).
-
-   The direct dependencies are resolved through `constraints-py312.txt`, the
-   exact environment verified for the v1 scientific baseline.
-3. Run the app:
-   ```bash
-   streamlit run app.py
-   ```
-   Or use `start.bat` (Windows) or `run.sh` (Linux/macOS).
-4. Open your browser to [http://localhost:8501](http://localhost:8501)
-
-## How to Use
-
-1. Select filters from the sidebar
-2. Adjust stack counts if needed
-3. Pick a camera QE profile and an illuminant
-4. See the results in the main area (charts, numbers, etc.)
-5. Download a PNG report if you want
-
-### Advanced
-- Use "Advanced Search" to filter by manufacturer, color, or transmission at a specific wavelength
-- Import your own data in the sidebar (TSV files)
-- Rebuild the cache if you add new data files
-
-
-## Project Structure
-
-```
-FS-FilterLab/
-├── app.py
-├── requirements.txt
-├── install.bat / install.sh
-├── start.bat / run.sh
-├── models/         # Data models
-├── services/       # Data processing and logic
-├── views/          # UI components
-├── data/           # Your spectral data files
-└── cache/          # Auto-generated cache
-```
-
-## Basic Troubleshooting
-
-- Delete .venv, then run install.bat/.sh to re-install dependencies
-- Use "Rebuild Cache" in the sidebar if you add or change data files. Alternatively, manually delete the /cache folder
-
-## Scientific baseline
-
-Run the complete deterministic suite, including all 1,566 bundled TSV files:
+On Linux or macOS:
 
 ```bash
-PYTHON_BIN=python3.12 bash scripts/run_gate1_baseline.sh
+./install.sh
+./run.sh
 ```
 
-The calculations capture approved FS FilterLab policies; reflector previews are
-illustrative sensor responses, not calibrated color predictions.
+On Windows:
 
-For the complete Gate 2 clean-install, scientific-suite, dataset-audit, cache,
-and application-startup verification:
+```bat
+install.bat
+start.bat
+```
+
+The installer creates `.venv`, installs the pinned Python 3.12 dependency set,
+and exits. The run command checks the environment and bundled data before
+starting Streamlit. Open <http://localhost:8501> if a browser does not open.
+
+Dependency installation requires package access unless the dependencies are
+already cached. After installation, normal application use is local and does
+not require a hosted service, account, database, telemetry, or network access.
+
+## Basic workflow
+
+1. Select one or more filters in the sidebar and set any repeated stack counts.
+2. Choose a sensor QE profile and scene illuminant under **Extras**.
+3. Inspect the transmission and sensor-response charts and effective-stop
+   metric.
+4. Optionally apply sensor-response balance, enable the channel mixer, select a
+   reflector, or hide plotted RGB traces.
+5. Generate and download the PNG report after the current state is final.
+
+The processing order is:
+
+`linear sensor response -> optional balance -> optional 3x3 mixer -> display`
+
+RGB visibility changes plotted traces only. It does not change analytical
+arrays, balance, mixing, metrics, or reflector-preview calculations.
+
+## CSV imports and data ownership
+
+Open **Settings -> WebPlotDigitizer .csv importers**. Files may use commas or
+semicolons and may include one header row.
+
+- Filter: `wavelength_nm, transmission`; choose `fraction` or `percent` and
+  choose lower and upper constant extrapolation separately. Both are off by
+  default.
+- Illuminant: `wavelength_nm, relative_power`; values must be non-negative and
+  are explicitly peak-normalized to 100.
+- Camera QE: `wavelength_nm, R, G, B`; choose `fraction` or `percent`.
+- Reflectance: `wavelength_nm, reflectance`; choose `fraction` or `percent` and
+  choose extrapolation separately. Absorption is not converted to reflectance.
+
+Validated imports are atomically published under the git-ignored `user_data/`
+tree. Set `FS_FILTERLAB_USER_DATA_DIR` to use another local root and
+`FS_FILTERLAB_CACHE_DIR` to relocate generated caches. Bundled
+`data/` remains unchanged. Filename and stable display-identity collisions are
+rejected rather than overwritten.
+
+## Project structure
+
+```text
+app.py             Streamlit entry point
+models/            data models and constants
+services/          loading, policy, calculations, workflow, and reports
+views/             Streamlit controls and presentation
+data/              bundled read-only spectral data
+user_data/         local imported spectral data (git-ignored)
+cache/             generated collection caches
+tests/             deterministic synthetic and bundled-data verification
+scripts/           complete gate verification commands
+```
+
+## Verification
+
+Run the complete Gate 4 suite from a clean Python 3.12 environment:
 
 ```bash
-PYTHON_BIN=python3.12 bash scripts/run_gate2_verification.sh
+PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
 ```
+
+The command creates temporary environments, cache, output, and user-data roots;
+runs the scientific, dataset, search/import, processing, state, Streamlit, PNG,
+performance, and launcher checks; runs `pip check`; and removes temporary state.
+It reconciles all 1,566 bundled TSV files without changing them.
+
+See [USAGE.md](USAGE.md), [TECHNICAL.md](TECHNICAL.md), and
+[docs/Gate4-Implementation.md](docs/Gate4-Implementation.md) for details.
 
 ## License
 
-MIT License. See LICENSE file.
-
----
+MIT License. See [LICENSE](LICENSE).

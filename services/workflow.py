@@ -34,9 +34,11 @@ class WorkflowSnapshot:
     balance_result: WhiteBalanceResult
     channel_responses: Dict[str, np.ndarray]
     current_qe: Dict[str, np.ndarray]
+    qe_available: bool
     camera_name: str
     illuminant_name: str
     illuminant_curve: np.ndarray
+    illuminant_available: bool
     apply_white_balance: bool
     channel_mixer: ChannelMixerSettings
     visible_channels: Dict[str, bool]
@@ -122,10 +124,12 @@ def build_workflow_snapshot(
     active = combined if combined is not None else transmission
 
     current_qe = app_state.current_qe or {}
+    qe_available = all(channel in current_qe for channel in ("R", "G", "B"))
+    illuminant_available = app_state.illuminant is not None
     illuminant = (
         np.asarray(app_state.illuminant, dtype=float)
-        if app_state.illuminant is not None
-        else np.ones_like(INTERP_GRID, dtype=float)
+        if illuminant_available
+        else np.zeros_like(INTERP_GRID, dtype=float)
     )
     green_qe = current_qe.get("G", np.zeros_like(active, dtype=float))
     effective = compute_effective_stops(active, green_qe, illuminant)
@@ -168,9 +172,11 @@ def build_workflow_snapshot(
         balance_result=balance,
         channel_responses=responses,
         current_qe=current_qe,
+        qe_available=qe_available,
         camera_name=app_state.selected_camera or "UnknownCamera",
         illuminant_name=app_state.illuminant_name or "UnknownIlluminant",
         illuminant_curve=illuminant,
+        illuminant_available=illuminant_available,
         apply_white_balance=apply_balance,
         channel_mixer=mixer,
         visible_channels=visibility,

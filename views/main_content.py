@@ -292,6 +292,7 @@ def render_main_content(app_state, data, workflow_snapshot):
     
     from views.forms import import_data_form, advanced_filter_search
     from views.channel_mixer import render_channel_mixer_panel
+    from views.ui_utils import show_info_message
     
     # Extract data  
     filter_collection = data['filter_collection']
@@ -314,9 +315,13 @@ def render_main_content(app_state, data, workflow_snapshot):
             app_state, filter_collection, selected_indices, workflow_snapshot
         )
     
-    # Sensor response and white balance
-    if app_state.current_qe:
+    # Sensor response and white balance require both declared dependencies.
+    if workflow_snapshot.qe_available and workflow_snapshot.illuminant_available:
         _render_sensor_analysis(app_state, data, workflow_snapshot)
+    elif not workflow_snapshot.qe_available:
+        show_info_message(UI_INFO_MESSAGES['select_qe'])
+    else:
+        show_info_message(UI_INFO_MESSAGES['select_illuminant'])
     
     # Raw QE and illuminant curves
     raw_qe_and_illuminant(app_state, data)
@@ -344,15 +349,15 @@ def _render_filter_analysis(
     # Update combined transmission in state
     app_state.combined_transmission = combined if combined is not None else trans
     
-    # Display transmission metrics using raw QE data and illuminant
-    raw_qe = app_state.current_qe.get('G') if app_state.current_qe else None
-    transmission_metrics(
-        trans,
-        label,
-        raw_qe,
-        app_state.illuminant,
-        workflow_snapshot.effective_result,
-    )
+    # Display weighted metrics only when both declared dependencies are present.
+    if workflow_snapshot.qe_available and workflow_snapshot.illuminant_available:
+        transmission_metrics(
+            trans,
+            label,
+            app_state.current_qe['G'],
+            app_state.illuminant,
+            workflow_snapshot.effective_result,
+        )
     
     # Create and display filter response plot
     filter_names = [filter.name for filter in filter_collection.filters]
@@ -425,7 +430,7 @@ def _render_vegetation_preview(
             reflector_preview(pixels)
             return pixels
         else:
-            show_warning_message(UI_WARNING_MESSAGES['vegetation_preview_required'])
+            show_warning_message(UI_INFO_MESSAGES['zero_preview'])
     else:
         show_warning_message(UI_WARNING_MESSAGES['vegetation_preview_required'])
     
@@ -508,6 +513,9 @@ def _render_reflector_previews(
         return
     
     if not is_reflector_data_valid(reflector_collection):
+        from views.ui_utils import show_info_message
+
+        show_info_message(UI_INFO_MESSAGES['no_valid_reflectors'])
         return
         
     reflector_matrix = reflector_collection.reflector_matrix

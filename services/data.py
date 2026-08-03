@@ -56,7 +56,7 @@ def interpolate_extrapolation_mask(
     ) > 0.5
 
 # Ensure cache directory exists
-Path(CACHE_DIR).mkdir(exist_ok=True)
+Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 
 # Generic type for cached data
 T = TypeVar('T')
