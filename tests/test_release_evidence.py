@@ -58,7 +58,11 @@ def test_release_documentation_uses_one_authoritative_limitation_record() -> Non
         assert "Approved and amended for macOS Apple Silicon-only support" in decision
         assert "does not authorize a tag" in decision
     checklist = (ROOT / "docs/Release-Checklist.md").read_text(encoding="utf-8")
-    assert "Publication authority: **Not granted**" in checklist
+    assert (
+        "Publication authority: **Granted by the owner and exercised on 2026-08-03**"
+        in checklist
+    )
+    assert "https://github.com/H3AdBaBY/FS-Filter-Lab/releases/tag/v1.0.0" in checklist
 
 
 def test_runtime_dependency_inventory_is_complete_and_pinned() -> None:

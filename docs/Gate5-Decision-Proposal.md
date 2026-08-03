@@ -295,3 +295,8 @@ other platforms are unsupported; Windows launchers are removed; the manual
 keyboard smoke remains required; and VoiceOver verification and formal
 accessibility conformance are outside the v1 scope. This amendment supersedes
 the original `G5-D004`, `G5-D010`, and related Gate 5 wording.
+
+The owner subsequently reported the manual keyboard smoke passed, accepted the
+exact candidate archives and checksums, and separately authorized publication.
+The completed branch, annotated `v1.0.0` tag, and approved assets were published
+to the owner's `H3AdBaBY/FS-Filter-Lab` fork on 2026-08-03.

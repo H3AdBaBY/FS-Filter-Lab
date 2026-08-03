@@ -1,11 +1,10 @@
 # Gate 5 implementation record
 
-Status: **Gate 5A, Gate 5B, and Gate 5C local acceptance complete; external
-publication approval pending**
+Status: **Gate 5 complete; v1.0.0 published**
 
 Version: `1.0.0`
 
-Publication authority: **Not granted**
+Publication authority: **Granted by the owner and exercised on 2026-08-03**
 
 ## Approved boundary
 
@@ -14,8 +13,9 @@ authorizes local Gate 5A release evidence and Gate 5B deterministic candidate
 construction. It does not authorize a tag, push, GitHub release, or other
 external publication. The owner subsequently approved the exact candidate and
 reported the manual keyboard smoke passed on 2026-08-03. Separate publication
-approval remains required. The approved amendment makes formal VoiceOver
-verification and accessibility conformance outside the v1 scope.
+approval was then granted for the exact tag, repository, and assets. The
+approved amendment makes formal VoiceOver verification and accessibility
+conformance outside the v1 scope.
 
 ## Gate 5A evidence
 
@@ -75,5 +75,11 @@ The command writes the exact candidate hashes and machine-readable environment
 record to ignored `dist/SHA256SUMS` and `dist/release-evidence.json`. The owner
 accepted those exact hashes and reported the manual keyboard smoke passed on
 2026-08-03. Gate 5C local acceptance is therefore complete. VoiceOver
-verification is not a release gate. Publication authority remains ungranted;
-no tag, push, GitHub release, or external publication was performed.
+verification is not a release gate.
+
+After separate owner authorization, the completed branch and annotated
+`v1.0.0` tag were pushed to `H3AdBaBY/FS-Filter-Lab`. The tag resolves to the
+recorded application commit
+`12a5a7f9c3c8cc6e27863d631f6efc95c34404e9`. GitHub release `v1.0.0` contains
+the exact approved tar.gz, ZIP, and `SHA256SUMS`; downloading those published
+assets and checking the published hashes passed.

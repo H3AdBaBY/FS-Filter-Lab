@@ -1,9 +1,8 @@
 # FS FilterLab 1.0.0 release checklist
 
-Status: **Gate 5A/Gate 5B automated verification and Gate 5C local acceptance
-complete; external publication approval pending**
+Status: **Gate 5 complete; v1.0.0 published**
 
-Publication authority: **Not granted**
+Publication authority: **Granted by the owner and exercised on 2026-08-03**
 
 ## Automated candidate evidence
 
@@ -66,5 +65,16 @@ blockers.
 - [x] Owner accepts the dependency and data-provenance evidence.
 - [x] Owner accepts `docs/Known-Limitations.md` and release notes.
 - [x] Owner approves the exact candidate archives and checksums.
-- [ ] Owner separately approves the exact tag, remote, and assets before any
+- [x] Owner separately approves the exact tag, remote, and assets before any
   tag, push, or GitHub release.
+
+## Publication record
+
+- Repository: `https://github.com/H3AdBaBY/FS-Filter-Lab`
+- Release: `https://github.com/H3AdBaBY/FS-Filter-Lab/releases/tag/v1.0.0`
+- Annotated tag: `v1.0.0`
+- Tagged application commit:
+  `12a5a7f9c3c8cc6e27863d631f6efc95c34404e9`
+- Published assets: both approved archives and `SHA256SUMS`
+- Remote audit: downloaded release assets passed the published SHA-256 checks
+  after publication.
