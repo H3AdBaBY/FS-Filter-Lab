@@ -233,11 +233,15 @@ def _create_filter_combo_info(selected_filters: List[str], df: Any, display_to_i
         Tuple of (combo_list, combo_name_string)
     """
     combo = []
-    for name in sorted(selected_filters):
+    counts = {name: selected_filters.count(name) for name in set(selected_filters)}
+    combo_names = []
+    for name in sorted(counts):
         idx = display_to_index.get(name)
         row = df.iloc[idx]
         combo.append((row['Manufacturer'], row['Filter Number'], row))
-    combo_name = ", ".join(f"{m} {n}" for m, n, _ in combo)
+        count_suffix = f" x{counts[name]}" if counts[name] > 1 else ""
+        combo_names.append(f"{row['Manufacturer']} {row['Filter Number']}{count_suffix}")
+    combo_name = ", ".join(combo_names)
     return combo, combo_name
 
 
@@ -247,7 +251,7 @@ def _add_filter_swatches_section(ax0, selected_filters: List[str], df: Any, disp
     y0 = 0.9
     counts = {f: selected_filters.count(f) for f in set(selected_filters)}
     
-    for filter_name, filter_count in counts.items():
+    for filter_name, filter_count in sorted(counts.items()):
         filter_index = display_to_index[filter_name]
         filter_row = df.iloc[filter_index]
         filter_color = filter_row.get('Hex Color', '#000000')
@@ -315,12 +319,13 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
                                active_trans: np.ndarray, interp_grid: np.ndarray, 
                                camera_name: str, illuminant_name: str,
                                apply_white_balance: bool,
-                               channel_mixer: Optional[ChannelMixerSettings]):
+                               channel_mixer: Optional[ChannelMixerSettings],
+                               channel_responses: Optional[Dict[str, np.ndarray]] = None):
     """Add sensor-weighted response section to the report."""
     maxresp = 0
     stack = {}
     
-    responses = _calculate_channel_responses(
+    responses = channel_responses or _calculate_channel_responses(
         active_trans,
         current_qe,
         {"R": True, "G": True, "B": True},
@@ -438,6 +443,7 @@ def create_report_config(
     illuminant_curve: np.ndarray,
     apply_white_balance: bool = False,
     channel_mixer: Optional[ChannelMixerSettings] = None,
+    channel_responses: Optional[Dict[str, np.ndarray]] = None,
 ) -> ReportConfig:
     """Helper function to create ReportConfig from individual parameters."""
     return ReportConfig(
@@ -448,6 +454,7 @@ def create_report_config(
         illuminant_curve=illuminant_curve,
         apply_white_balance=apply_white_balance,
         channel_mixer=channel_mixer,
+        channel_responses=channel_responses,
     )
 
 def create_filter_data(
@@ -520,6 +527,7 @@ def generate_report_png_v2(
         illuminant_curve=report_config.illuminant_curve,
         apply_white_balance=report_config.apply_white_balance,
         channel_mixer=report_config.channel_mixer,
+        channel_responses=report_config.channel_responses,
     )
 
 def generate_report_png(
@@ -542,6 +550,7 @@ def generate_report_png(
     illuminant_curve: np.ndarray,
     apply_white_balance: bool,
     channel_mixer: Optional[ChannelMixerSettings],
+    channel_responses: Optional[Dict[str, np.ndarray]] = None,
 ) -> Dict[str, Any]:
     """
     Generate a PNG report of the current filter configuration.
@@ -585,7 +594,8 @@ def generate_report_png(
     )
     _add_sensor_response_section(fig.add_subplot(gs[4]), current_qe, wb, active_trans, 
                                interp_grid, camera_name, illuminant_name,
-                               apply_white_balance, channel_mixer)
+                               apply_white_balance, channel_mixer,
+                               channel_responses)
 
     # Finalize layout
     fig.suptitle("Filter Report", fontsize=REPORT_CONFIG['font_sizes']['main_title'], fontweight='bold')
@@ -823,14 +833,15 @@ def create_sensor_response_plot(
     white_balance_gains: Dict[str, float],
     apply_white_balance: bool,
     target_profile: Optional[Any] = None,
-    channel_mixer: Optional[ChannelMixerSettings] = None
+    channel_mixer: Optional[ChannelMixerSettings] = None,
+    channel_responses: Optional[Dict[str, np.ndarray]] = None,
 ) -> go.Figure:
     """Create a plotly figure showing sensor response with optional channel mixing."""
     fig = go.Figure()
     
     # Calculate channel responses
-    responses = _calculate_channel_responses(
-        transmission, qe_data, visible_channels, 
+    responses = channel_responses or _calculate_channel_responses(
+        transmission, qe_data, visible_channels,
         white_balance_gains, apply_white_balance, channel_mixer
     )
     

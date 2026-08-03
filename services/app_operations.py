@@ -43,17 +43,11 @@ import streamlit as st
 # Local imports
 from models.core import FilterCollection, ReflectorCollection
 from models.constants import INTERP_GRID, CACHE_DIR, UI_BUTTONS
-from services.calculations import (
-    compute_filter_transmission,
-    compute_selected_filter_indices,
-    compute_effective_stops,
-    compute_rgb_response,
-    compute_white_balance
-)
 from services.visualization import (
-    generate_report_png, add_filter_curve_to_matplotlib, generate_report_png_v2,
+    add_filter_curve_to_matplotlib, generate_report_png_v2,
     create_report_config, create_filter_data, create_computation_functions, create_sensor_data
 )
+from services.workflow import WorkflowSnapshot, build_workflow_snapshot
 
 # Type checking imports
 if TYPE_CHECKING:
@@ -192,7 +186,8 @@ def process_reflector_data(reflector_collection: ReflectorCollection) -> None:
 def generate_application_report(
     app_state: "StateManager", 
     filter_collection: FilterCollection,
-    selected_camera: Optional[str] = None
+    selected_camera: Optional[str] = None,
+    workflow_snapshot: Optional[WorkflowSnapshot] = None,
 ) -> bool:
     """
     Generate a PNG report of the current filter configuration.
@@ -205,58 +200,29 @@ def generate_application_report(
     Returns:
         True if report was generated successfully, False otherwise
     """
-    # Get selected filter indices
-    selected_indices = compute_selected_filter_indices(
-        app_state.selected_filters, 
-        app_state.filter_multipliers, 
-        filter_collection
+    # Never retain a prior artifact while generating current-state output.
+    app_state.last_export = {}
+
+    snapshot = workflow_snapshot or build_workflow_snapshot(
+        app_state, filter_collection
     )
+    selected_indices = list(snapshot.selected_indices)
     
     if not selected_indices:
         return False
         
-    # Get filter transmission
-    transmission, transmission_label, combined_transmission = compute_filter_transmission(selected_indices, filter_collection.filter_matrix)
-    
-    if transmission is None:
-        return False
-        
-    # Calculate sensor QE
-    sensor_qe = None
-    if app_state.current_qe:
-        responses, rgb_matrix, _ = compute_rgb_response(
-            transmission, 
-            app_state.current_qe,
-            app_state.white_balance_gains,
-            app_state.rgb_channels_visibility
-        )
-        # Use raw Green channel QE for effective stops calculation
-        sensor_qe = app_state.current_qe.get('G', None) if app_state.current_qe else None
-    
-    # Get illuminant
-    illuminant = (app_state.illuminant if app_state.illuminant is not None 
-                 else np.ones_like(INTERP_GRID))
-    
-    # Compute effective stops
-    effective_stops_fn = lambda t, qe, illum=None: compute_effective_stops(
-        t, qe if qe is not None else np.zeros_like(t), illuminant
-    )
-    
-    # Compute white balance
-    white_balance_fn = lambda t, qe, illum: (
-        compute_white_balance(t, qe, illum) if qe is not None
-        else compute_white_balance(t, {}, illum)
-    )
+    sensor_qe = snapshot.current_qe.get("G")
     
     # Generate report using new data class structure (simplified version)
     report_config = create_report_config(
-        selected_filters=app_state.selected_filters,
-        current_qe=app_state.current_qe,
-        camera_name=selected_camera or "UnknownCamera",
-        illuminant_name=app_state.illuminant_name or "UnknownIlluminant",
-        illuminant_curve=illuminant,
-        apply_white_balance=app_state.apply_white_balance,
-        channel_mixer=app_state.channel_mixer,
+        selected_filters=list(snapshot.expanded_filters),
+        current_qe=snapshot.current_qe,
+        camera_name=selected_camera or snapshot.camera_name,
+        illuminant_name=snapshot.illuminant_name,
+        illuminant_curve=snapshot.illuminant_curve,
+        apply_white_balance=snapshot.apply_white_balance,
+        channel_mixer=snapshot.channel_mixer,
+        channel_responses=snapshot.channel_responses,
     )
     
     filter_data = create_filter_data(
@@ -269,11 +235,13 @@ def generate_application_report(
     
     computation_fns = create_computation_functions(
         compute_selected_indices_fn=lambda sel: selected_indices,
-        compute_filter_transmission_fn=lambda idxs: compute_filter_transmission(
-            idxs, filter_collection.filter_matrix
+        compute_filter_transmission_fn=lambda idxs: (
+            snapshot.transmission,
+            snapshot.transmission_label,
+            snapshot.combined_transmission,
         ),
-        compute_effective_stops_fn=effective_stops_fn,
-        compute_white_balance_gains_fn=white_balance_fn,
+        compute_effective_stops_fn=lambda t, qe, illum=None: snapshot.effective_result,
+        compute_white_balance_gains_fn=lambda t, qe, illum: snapshot.balance_result,
         add_curve_fn=add_filter_curve_to_matplotlib,
         sanitize_fn=sanitize_filename_component
     )
@@ -289,6 +257,8 @@ def generate_application_report(
     )
     
     if result:
+        result["workflow_identity"] = snapshot.identity
+        result["metadata"] = snapshot.report_metadata()
         app_state.last_export = result
         return True
         
@@ -318,7 +288,10 @@ def rebuild_application_cache(cache_dir: Path) -> bool:
     return success
 
 
-def setup_report_download(app_state: "StateManager") -> None:
+def setup_report_download(
+    app_state: "StateManager",
+    workflow_snapshot: Optional[WorkflowSnapshot] = None,
+) -> None:
     """
     Setup download button for the last generated report.
     
@@ -326,7 +299,11 @@ def setup_report_download(app_state: "StateManager") -> None:
         app_state: Current application state
     """
     last_export = app_state.last_export
-    if last_export and last_export.get("bytes"):
+    identity_matches = (
+        workflow_snapshot is None
+        or last_export.get("workflow_identity") == workflow_snapshot.identity
+    )
+    if last_export and last_export.get("bytes") and identity_matches:
         st.download_button(
             label=UI_BUTTONS['download_report'],
             data=last_export["bytes"],

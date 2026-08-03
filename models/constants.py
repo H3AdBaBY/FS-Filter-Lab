@@ -298,6 +298,7 @@ class ReportConfig:
     illuminant_curve: np.ndarray
     apply_white_balance: bool = False
     channel_mixer: Any = None
+    channel_responses: Optional[Dict[str, np.ndarray]] = None
 
 @dataclass
 class FilterData:

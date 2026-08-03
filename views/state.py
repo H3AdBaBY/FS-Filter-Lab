@@ -44,6 +44,7 @@ import streamlit as st
 from models.constants import CACHE_DIR, UI_SUCCESS_MESSAGES
 from services.app_operations import generate_application_report, rebuild_application_cache
 from services.state_manager import get_state_manager, StateManager
+from services.workflow import WorkflowSnapshot
 from views.ui_utils import handle_error, show_info_message, show_success_message
 
 
@@ -72,7 +73,12 @@ def initialize_session_state() -> StateManager:
     return get_state_manager()
 
 
-def handle_app_actions(actions: Dict[str, Any], state_manager: StateManager, data: Dict) -> None:
+def handle_app_actions(
+    actions: Dict[str, Any],
+    state_manager: StateManager,
+    data: Dict,
+    workflow_snapshot: WorkflowSnapshot,
+) -> None:
     """
     Process and execute actions triggered by user interface interactions.
     
@@ -114,11 +120,15 @@ def handle_app_actions(actions: Dict[str, Any], state_manager: StateManager, dat
     # Handle report generation
     if 'generate_report' in actions:
         selected_camera = actions['generate_report']
+        # A failed or interrupted regeneration must never expose stale bytes.
+        state_manager.last_export = {}
+
         def _generate_report():
             success = generate_application_report(
                 app_state=state_manager,
                 filter_collection=data['filter_collection'],
-                selected_camera=selected_camera
+                selected_camera=selected_camera,
+                workflow_snapshot=workflow_snapshot,
             )
             if success:
                 show_success_message(UI_SUCCESS_MESSAGES['report_generated'])

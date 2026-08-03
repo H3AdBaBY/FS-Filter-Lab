@@ -16,6 +16,7 @@ from models.constants import (
 )
 from models.core import FilterCollection, TargetProfile, ReflectorCollection
 from services.app_operations import setup_report_download
+from services.workflow import build_workflow_snapshot
 from views.ui_utils import try_operation, handle_error
 
 
@@ -359,6 +360,9 @@ def render_sidebar(app_state, data):
     app_state.target_profile = target_profile
     # Reflector selection is widget-managed and accessed directly from session_state
     
+    # Freeze the state used by metrics, charts, and report export for this rerun.
+    workflow_snapshot = build_workflow_snapshot(app_state, filter_collection)
+
     # Collect actions to return
     actions = {}
     
@@ -367,7 +371,7 @@ def render_sidebar(app_state, data):
         actions['generate_report'] = selected_camera
     
     # Show download button if a report is ready
-    setup_report_download(app_state)
+    setup_report_download(app_state, workflow_snapshot)
     
     # Settings Panel (using existing function from this module)
     rebuild_cache, show_import, rgb_channels = settings_panel(app_state)
@@ -377,4 +381,4 @@ def render_sidebar(app_state, data):
     if rebuild_cache:
         actions['rebuild_cache'] = True
         
-    return actions
+    return actions, workflow_snapshot

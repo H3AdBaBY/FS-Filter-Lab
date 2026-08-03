@@ -89,7 +89,8 @@ def transmission_metrics(
     trans: np.ndarray, 
     label: str, 
     sensor_qe: Optional[np.ndarray],
-    illuminant: Optional[np.ndarray] = None
+    illuminant: Optional[np.ndarray] = None,
+    effective_result: Optional[Any] = None,
 ) -> None:
     """Display transmission metrics (light loss)."""
     from services.calculations import format_transmission_metrics
@@ -109,7 +110,7 @@ def transmission_metrics(
         return
     
     # Calculate effective stops with illuminant weighting
-    result = compute_effective_stops(trans, sensor_qe, illuminant)
+    result = effective_result or compute_effective_stops(trans, sensor_qe, illuminant)
     if not result.available:
         from views.ui_utils import show_warning_message
         show_warning_message(f"Cannot compute green-channel effective stops for {label}: {result.reason}.")
@@ -165,7 +166,8 @@ def deviation_metrics(
 
 def white_balance_display(
     white_balance_gains: Dict[str, float],
-    selected_filters: List[str]
+    selected_filters: List[str],
+    applied: bool,
 ) -> None:
     """Display applied sensor-response balance multipliers in the UI."""
     from services.calculations import format_white_balance_data
@@ -176,8 +178,10 @@ def white_balance_display(
     # Add a note if no filters are selected
     no_filter_note = " (No filter selected)" if not wb_data["has_filters"] else ""
     
+    status = "applied" if applied else "not applied"
     st.markdown(
-        f"**Sensor-Response Balance Multipliers{no_filter_note}:** (Green = 1.000):  \n"
+        f"**Sensor-Response Balance Multipliers{no_filter_note}:** "
+        f"({status}; Green = 1.000):  \n"
         f"R: {wb_data['intensities']['R']}   "
         f"G: {wb_data['intensities']['G']}   "
         f"B: {wb_data['intensities']['B']}"
@@ -269,7 +273,7 @@ def sensor_response_display(fig) -> None:
     render_chart(fig, title=UI_CHART_TITLES['sensor_weighted_response'])
 
 
-def render_main_content(app_state, data):
+def render_main_content(app_state, data, workflow_snapshot):
     """
     Render the main content area of the application.
     
@@ -286,44 +290,16 @@ def render_main_content(app_state, data):
     """
     import streamlit as st
     
-    from models.constants import INTERP_GRID
-    from models.core import TargetProfile
-    from services.calculations import compute_selected_filter_indices
-    from services import (
-        compute_filter_transmission,
-        compute_active_transmission, 
-        compute_rgb_response
-    )
-    from services.visualization import (
-        create_filter_response_plot,
-        create_sensor_response_plot,
-        add_filter_curve_to_plotly
-    )
-    from services.calculations import (
-        is_reflector_data_valid,
-        check_reflector_wavelength_validity, 
-        compute_reflector_preview_colors,
-        compute_single_reflector_color
-    )
     from views.forms import import_data_form, advanced_filter_search
-    from views.channel_mixer import render_channel_mixer_panel, render_compact_channel_mixer_status
-    from views.ui_utils import show_warning_message, show_info_message
+    from views.channel_mixer import render_channel_mixer_panel
     
     # Extract data  
     filter_collection = data['filter_collection']
-    illuminant_metadata = data['illuminant_metadata']
-    reflector_collection = data['reflector_collection']
-    
     # Show import dialog if needed
     if app_state.show_import_data:
         import_data_form()
     
-    # Compute selected filter indices
-    selected_indices = compute_selected_filter_indices(
-        app_state.selected_filters,
-        app_state.filter_multipliers,
-        filter_collection
-    )
+    selected_indices = list(workflow_snapshot.selected_indices)
     
     # Header
     st.markdown("""
@@ -334,11 +310,13 @@ def render_main_content(app_state, data):
     
     # Filter transmission plots and metrics
     if selected_indices:
-        _render_filter_analysis(app_state, filter_collection, selected_indices)
+        _render_filter_analysis(
+            app_state, filter_collection, selected_indices, workflow_snapshot
+        )
     
     # Sensor response and white balance
     if app_state.current_qe:
-        _render_sensor_analysis(app_state, data, selected_indices)
+        _render_sensor_analysis(app_state, data, workflow_snapshot)
     
     # Raw QE and illuminant curves
     raw_qe_and_illuminant(app_state, data)
@@ -352,33 +330,29 @@ def render_main_content(app_state, data):
         app_state.channel_mixer = render_channel_mixer_panel(app_state.channel_mixer)
 
 
-def _render_filter_analysis(app_state, filter_collection, selected_indices):
+def _render_filter_analysis(
+    app_state, filter_collection, selected_indices, workflow_snapshot
+):
     """Render filter analysis plots and metrics."""
     from models.constants import INTERP_GRID
-    from services import compute_filter_transmission, compute_rgb_response, create_filter_response_plot
+    from services import create_filter_response_plot
     
-    # Calculate transmission and combined transmission
-    trans, label, combined = compute_filter_transmission(
-        selected_indices,
-        filter_collection.filter_matrix
-    )
+    trans = workflow_snapshot.transmission
+    label = workflow_snapshot.transmission_label
+    combined = workflow_snapshot.combined_transmission
     
     # Update combined transmission in state
     app_state.combined_transmission = combined if combined is not None else trans
     
-    # Calculate sensor QE for display (RGB response)
-    if app_state.current_qe:
-        responses, rgb_matrix, _ = compute_rgb_response(
-            trans, 
-            app_state.current_qe,
-            app_state.white_balance_gains,
-            app_state.rgb_channels_visibility,
-            app_state.channel_mixer  # Pass channel mixer settings
-        )
-    
     # Display transmission metrics using raw QE data and illuminant
     raw_qe = app_state.current_qe.get('G') if app_state.current_qe else None
-    transmission_metrics(trans, label, raw_qe, app_state.illuminant)
+    transmission_metrics(
+        trans,
+        label,
+        raw_qe,
+        app_state.illuminant,
+        workflow_snapshot.effective_result,
+    )
     
     # Create and display filter response plot
     filter_names = [filter.name for filter in filter_collection.filters]
@@ -401,35 +375,25 @@ def _render_filter_analysis(app_state, filter_collection, selected_indices):
     deviation_metrics(trans, combined, app_state.target_profile)
 
 
-def _compute_white_balance(app_state, trans_interp):
-    """Compute and update structured sensor-response balance."""
-    from services import compute_white_balance
-
-    result = None
-    if app_state.current_qe and app_state.illuminant is not None:
-        result = compute_white_balance(
-            trans_interp, app_state.current_qe, app_state.illuminant
-        )
-        if result.available:
-            app_state.white_balance_gains = result.balance_divisors
-
-    return result
-
-
-def _render_sensor_response_plot(app_state, trans_interp, wb_gains) -> None:
+def _render_sensor_response_plot(app_state, workflow_snapshot) -> None:
     """Create and display the sensor response plot."""
     from models.constants import INTERP_GRID
     from services import create_sensor_response_plot
     
     fig_response = create_sensor_response_plot(
         interp_grid=INTERP_GRID,
-        transmission=trans_interp,
+        transmission=workflow_snapshot.active_transmission,
         qe_data=app_state.current_qe,
         visible_channels=app_state.rgb_channels_visibility,
-        white_balance_gains=wb_gains,
+        white_balance_gains=(
+            workflow_snapshot.balance_result.balance_divisors
+            if workflow_snapshot.balance_result.available
+            else {"R": 1.0, "G": 1.0, "B": 1.0}
+        ),
         apply_white_balance=app_state.apply_white_balance,
         target_profile=app_state.target_profile,
-        channel_mixer=app_state.channel_mixer
+        channel_mixer=app_state.channel_mixer,
+        channel_responses=workflow_snapshot.channel_responses,
     )
     
     sensor_response_display(fig_response)
@@ -534,39 +498,30 @@ def _render_reflector_previews(app_state, trans_interp, reflector_collection) ->
     _render_single_reflector_preview(app_state, trans_interp, reflector_collection, pixels)
 
 
-def _render_sensor_analysis(app_state, data, selected_indices):
+def _render_sensor_analysis(app_state, data, workflow_snapshot):
     """Render sensor response analysis and reflector previews."""
-    from models.constants import INTERP_GRID
-    from services import compute_active_transmission
     from views.ui_utils import show_info_message
     
     # Extract data
-    filter_collection = data['filter_collection'] 
     reflector_collection = data['reflector_collection']
     
-    # Compute active transmission
-    trans_interp = compute_active_transmission(
-        app_state.selected_filters, selected_indices, filter_collection.filter_matrix
-    )
-    
-    # Compute and update white balance
-    balance = _compute_white_balance(app_state, trans_interp)
-    wb_divisors = (
-        balance.balance_divisors
-        if balance is not None and balance.available
-        else {"R": 1.0, "G": 1.0, "B": 1.0}
-    )
+    trans_interp = workflow_snapshot.active_transmission
+    balance = workflow_snapshot.balance_result
+    if balance.available:
+        app_state.white_balance_gains = balance.balance_divisors
     
     # Render sensor response plot
-    _render_sensor_response_plot(app_state, trans_interp, wb_divisors)
+    _render_sensor_response_plot(app_state, workflow_snapshot)
     
     # Render reflector previews
     _render_reflector_previews(app_state, trans_interp, reflector_collection)
     
     # Display white balance information
-    if balance is not None and balance.available:
-        white_balance_display(balance.balance_divisors, app_state.selected_filters)
-    elif balance is not None:
-        show_info_message(f"Sensor-response balance unavailable: {balance.reason}.")
+    if balance.available:
+        white_balance_display(
+            balance.balance_divisors,
+            app_state.selected_filters,
+            workflow_snapshot.apply_white_balance,
+        )
     else:
-        show_info_message(UI_INFO_MESSAGES['qe_illuminant_required'])
+        show_info_message(f"Sensor-response balance unavailable: {balance.reason}.")

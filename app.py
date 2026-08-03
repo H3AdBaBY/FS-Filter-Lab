@@ -43,13 +43,13 @@ def main():
         return
     
     # 2. Render sidebar
-    sidebar_actions = render_sidebar(app_state, data)
+    sidebar_actions, workflow_snapshot = render_sidebar(app_state, data)
     
     # 3. Render main content  
-    render_main_content(app_state, data)
+    render_main_content(app_state, data, workflow_snapshot)
     
     # 4. Handle actions
-    handle_app_actions(sidebar_actions, app_state, data)
+    handle_app_actions(sidebar_actions, app_state, data, workflow_snapshot)
 
 
 if __name__ == "__main__":

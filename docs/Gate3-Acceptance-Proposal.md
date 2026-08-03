@@ -1,6 +1,6 @@
 # Gate 3 Vertical Workflow Acceptance Proposal
 
-Status: **Proposed — owner approval required before implementation**
+Status: **Approved for implementation**
 
 Prerequisite: reviewed Gate 2 implementation merged or explicitly accepted
 Scope: FS FilterLab only
@@ -171,5 +171,4 @@ Gate 3 exits only when:
 
 ## Approval record
 
-No Gate 3 implementation is authorized by this proposal. Record owner approval
-or amendments here before changing the vertical workflow.
+The owner approved `G3-D001` through `G3-D008` as written on 2026-08-03.
