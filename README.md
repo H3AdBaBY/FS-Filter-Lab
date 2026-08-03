@@ -100,16 +100,17 @@ scripts/           complete gate verification commands
 
 ## Verification
 
-Run the complete Gate 4 suite from a clean Python 3.12 environment:
+Run the complete local release suite from a clean Python 3.12 environment:
 
 ```bash
-PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
+PYTHON_BIN=python3.12 bash scripts/run_gate5_release.sh
 ```
 
-The command creates temporary environments, cache, output, and user-data roots;
-runs the scientific, dataset, search/import, processing, state, Streamlit, PNG,
-performance, and launcher checks; runs `pip check`; and removes temporary state.
-It reconciles all 1,566 bundled TSV files without changing them.
+The command includes the complete Gate 4 suite, reconciles all 1,566 bundled
+TSV files, builds both deterministic archive forms twice, verifies their
+manifests and hashes, installs and exercises both extracted candidates without
+Git metadata, denies non-loopback runtime sockets, and publishes `dist/` only
+after every automated check passes.
 
 For the release boundary, see
 [Known Limitations](docs/Known-Limitations.md),

@@ -84,17 +84,22 @@ artifact; import publication does not leave a partial file.
 The complete command is:
 
 ```bash
-PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
+PYTHON_BIN=python3.12 bash scripts/run_gate5_release.sh
 ```
 
-It creates clean temporary Python, cache, output, and user-data locations and
-runs:
+It includes the complete Gate 4 command, then creates and verifies deterministic
+populated release archives. Gate 4 itself runs:
 
 - all deterministic `pytest` tests and the exact 1,566-file bundled audit;
 - prior Streamlit and PNG smoke/vertical workflows;
 - Gate 4 search, importer, processing, state, and performance interactions;
 - clean-install and populated-release launcher checks;
 - `pip check`.
+
+Gate 5 additionally compares two builds of both archive forms, verifies every
+manifested file/hash/mode, installs and exercises each extracted form without
+Git metadata, denies non-loopback runtime sockets while checking localhost
+health, and writes final candidates under ignored `dist/` only after success.
 
 Manual browser evidence covers keyboard operation, accessible structure, and
 1280 px, 768 px, and 390 px layouts. The implementation record is

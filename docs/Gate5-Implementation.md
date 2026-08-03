@@ -1,6 +1,7 @@
 # Gate 5 implementation record
 
-Status: **Gate 5A evidence implemented; Gate 5B candidate work pending**
+Status: **Gate 5A evidence implemented; Gate 5B tooling implemented with full
+clean-tree verification pending**
 
 Version: `1.0.0`
 
@@ -30,5 +31,20 @@ macOS VoiceOver smoke, candidate approval, and separate publication approval.
 - `docs/Release-Checklist.md` keeps manual accessibility and owner publication
   actions explicit and incomplete.
 
-Gate 5B construction results and exact artifact hashes will be appended only
-after the full release command passes.
+## Gate 5B tooling
+
+- `scripts/release_candidate.py` builds populated ZIP and tar.gz candidates
+  from an explicit allowlist, normalizes ordering, timestamps, and modes, and
+  embeds a manifest covering every other regular file.
+- Safe verification rejects traversal, unsupported archive members, manifest
+  drift, forbidden local state, incorrect modes, and any bundled TSV count
+  other than 1,566.
+- `scripts/offline_guard/sitecustomize.py` is opt-in test instrumentation that
+  denies non-loopback name resolution and connections while permitting
+  localhost and local Unix sockets. It does not alter normal application runs.
+- `scripts/run_gate5_release.sh` is the one complete command. It builds each
+  archive twice, verifies identical hashes, then installs and exercises both
+  extracted forms before atomically replacing ignored `dist/` candidates.
+
+Construction results and exact artifact hashes will be recorded only after the
+full clean-tree release command passes.

@@ -76,7 +76,7 @@ RELEASE_ROOT="$WORK_ROOT/release"
 mkdir -p "$RELEASE_ROOT"
 cp -R "$REPO_ROOT/." "$RELEASE_ROOT"
 rm -f "$RELEASE_ROOT/.git"
-rm -rf "$RELEASE_ROOT/cache" "$RELEASE_ROOT/user_data" "$RELEASE_ROOT/output"
+rm -rf "$RELEASE_ROOT/cache" "$RELEASE_ROOT/user_data" "$RELEASE_ROOT/output" "$RELEASE_ROOT/dist"
 sh -n "$RELEASE_ROOT/install.sh" "$RELEASE_ROOT/run.sh"
 
 PIP_CACHE_DIR="$VERIFY_CACHE_ROOT/pip" \

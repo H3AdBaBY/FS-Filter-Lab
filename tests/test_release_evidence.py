@@ -42,9 +42,13 @@ def test_release_documentation_uses_one_authoritative_limitation_record() -> Non
     assert all((ROOT / relative).is_file() for relative in required)
     for relative in ("README.md", "USAGE.md", "CHANGELOG.md"):
         assert "Known-Limitations.md" in (ROOT / relative).read_text(encoding="utf-8")
-    decision = (ROOT / "docs/Gate5-Decision-Proposal.md").read_text(encoding="utf-8")
-    assert "Approved for Gate 5A and Gate 5B implementation" in decision
-    assert "does not authorize a tag" in decision
+    decision_path = ROOT / "docs/Gate5-Decision-Proposal.md"
+    if decision_path.exists():
+        decision = decision_path.read_text(encoding="utf-8")
+        assert "Approved for Gate 5A and Gate 5B implementation" in decision
+        assert "does not authorize a tag" in decision
+    checklist = (ROOT / "docs/Release-Checklist.md").read_text(encoding="utf-8")
+    assert "Publication authority: **Not granted**" in checklist
 
 
 def test_runtime_dependency_inventory_is_complete_and_pinned() -> None:

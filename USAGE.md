@@ -100,7 +100,7 @@ response are reported rather than replaced by fabricated patches.
 ## Complete verification
 
 ```bash
-PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
+PYTHON_BIN=python3.12 bash scripts/run_gate5_release.sh
 ```
 
 For release-specific platform, scientific, provenance, privacy, and
