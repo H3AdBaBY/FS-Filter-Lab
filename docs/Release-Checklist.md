@@ -24,7 +24,7 @@ Automated result recorded 2026-08-03 on macOS 26.5.2 arm64 with Python
 3.12.13. Exact candidate hashes and build evidence are generated under ignored
 `dist/` by the complete Gate 5 command.
 
-## Manual keyboard smoke — required
+## Manual keyboard smoke — completed
 
 Record:
 

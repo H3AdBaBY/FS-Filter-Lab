@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — release candidate
+## 1.0.0 — released 2026-08-03
 
 FS FilterLab 1.0.0 completes the approved standalone v1 modernization from the
 `V0.5.1-Beta` upstream lineage.

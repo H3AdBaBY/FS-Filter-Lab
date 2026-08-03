@@ -52,6 +52,11 @@ def test_release_documentation_uses_one_authoritative_limitation_record() -> Non
     assert all((ROOT / relative).is_file() for relative in required)
     for relative in ("README.md", "USAGE.md", "CHANGELOG.md"):
         assert "Known-Limitations.md" in (ROOT / relative).read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Current release candidate" not in readme
+    assert "https://github.com/H3AdBaBY/FS-Filter-Lab/releases/tag/v1.0.0" in readme
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## 1.0.0 — released 2026-08-03" in changelog
     decision_path = ROOT / "docs/Gate5-Decision-Proposal.md"
     if decision_path.exists():
         decision = decision_path.read_text(encoding="utf-8")
@@ -63,6 +68,8 @@ def test_release_documentation_uses_one_authoritative_limitation_record() -> Non
         in checklist
     )
     assert "https://github.com/H3AdBaBY/FS-Filter-Lab/releases/tag/v1.0.0" in checklist
+    gate4 = (ROOT / "docs/Gate4-Implementation.md").read_text(encoding="utf-8")
+    assert "Manual keyboard smoke | **Pass in Gate 5C**" in gate4
 
 
 def test_runtime_dependency_inventory_is_complete_and_pinned() -> None:

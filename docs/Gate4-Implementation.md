@@ -1,7 +1,7 @@
 # Gate 4 remaining parity and UX implementation
 
-Status: **Implemented and automated verification passed; manual keyboard smoke
-remains a Gate 5C usability check**
+Status: **Complete; automated verification and the Gate 5C manual keyboard
+smoke passed**
 
 Owner approval: `G4-D001` through `G4-D012` as written, 2026-08-03
 
@@ -134,9 +134,9 @@ relative-luminance choice for black/white text over filter colors.
 
 The in-app automation runtime could inspect focus structure but could not
 reliably synthesize native Tab/Space traversal for Streamlit controls. The
-manual keyboard usability check therefore remains in Gate 5C. A later approved
-Gate 5 amendment made formal VoiceOver verification and accessibility
-conformance outside the v1 scope.
+owner completed the physical-keyboard usability check in Gate 5C and reported
+no blocker. A later approved Gate 5 amendment made formal VoiceOver verification
+and accessibility conformance outside the v1 scope.
 
 ## Acceptance status
 
@@ -149,13 +149,13 @@ conformance outside the v1 scope.
 | Automated accessibility structure/contrast | Pass |
 | Documentation and launchers | Pass |
 | Performance and regression | Pass |
-| Manual keyboard smoke | **Pending owner/reference-machine run in Gate 5C** |
+| Manual keyboard smoke | **Pass in Gate 5C** |
 | VoiceOver verification | **Out of v1 scope by approved Gate 5 amendment** |
 
 Gate 4 code is implemented, reviewed, and automated verification is green. The
 approved Gate 5 amendment supersedes the earlier VoiceOver release gate. The
-manual keyboard check remains a Gate 5C usability requirement for filter
-selection, advanced search, import, processing controls, and report download.
+manual keyboard check passed for filter selection, advanced search, import,
+processing controls, and report download.
 
 ## Scientific decisions
 
@@ -165,7 +165,7 @@ It does not claim calibrated color or undocumented scientific correctness.
 
 ## Deferred boundary
 
-Gate 5 remains responsible for final release limitations, dependency-license
-review, packaging/notarization decisions, and release publication. Gate 4 added
-no hosting, accounts, databases, telemetry, RAW functionality, framework
-rewrite, bundled TSV edit, or scientific-formula redesign.
+Gate 5 subsequently completed final release limitations, dependency-license
+review, packaging decisions, acceptance, and publication. Gate 4 added no
+hosting, accounts, databases, telemetry, RAW functionality, framework rewrite,
+bundled TSV edit, or scientific-formula redesign.

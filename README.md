@@ -1,6 +1,6 @@
 # FS FilterLab
 
-Current release candidate: **1.0.0**.
+Current release: **[1.0.0](https://github.com/H3AdBaBY/FS-Filter-Lab/releases/tag/v1.0.0)**.
 
 FS FilterLab is a local Streamlit application for comparing optical filters,
 filter stacks, camera quantum-efficiency (QE) curves, illuminants, and surface
@@ -117,6 +117,9 @@ For the release boundary, see
 [TECHNICAL.md](TECHNICAL.md), and
 [docs/Gate4-Implementation.md](docs/Gate4-Implementation.md) for operating and
 verification details.
+
+Project source and release downloads are maintained at
+[H3AdBaBY/FS-Filter-Lab](https://github.com/H3AdBaBY/FS-Filter-Lab).
 
 ## License
 
