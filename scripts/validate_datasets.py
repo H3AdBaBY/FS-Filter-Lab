@@ -8,7 +8,12 @@ import json
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
+import sys
 from typing import Any, Callable
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, REPOSITORY_ROOT.as_posix())
 
 from services.data import (
     _process_filter_file,

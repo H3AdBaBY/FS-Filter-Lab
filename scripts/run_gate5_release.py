@@ -30,14 +30,19 @@ def _run(
     capture: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     print("+", " ".join(command), flush=True)
-    return subprocess.run(
+    result = subprocess.run(
         command,
         cwd=cwd,
         env=environment,
-        check=True,
+        check=False,
         text=True,
         capture_output=capture,
     )
+    if result.returncode and capture:
+        print(result.stdout, end="", flush=True)
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+    result.check_returncode()
+    return result
 
 
 def _environment(**values: Path | str) -> dict[str, str]:
