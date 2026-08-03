@@ -33,13 +33,11 @@ ROOT_FILES = (
     "app.py",
     "constraints-py312.txt",
     "dependency-licenses.json",
-    "install.bat",
     "install.sh",
     "pytest.ini",
     "requirements-test.txt",
     "requirements.txt",
     "run.sh",
-    "start.bat",
 )
 TRACKED_PREFIXES = (
     "models/",

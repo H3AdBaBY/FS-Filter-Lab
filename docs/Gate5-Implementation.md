@@ -12,8 +12,10 @@ Publication authority: **Not granted**
 The owner approved `G5-D001` through `G5-D012` as written. That approval
 authorizes local Gate 5A release evidence and Gate 5B deterministic candidate
 construction. It does not authorize a tag, push, GitHub release, or other
-external publication. Gate 5C still requires the recorded manual keyboard and
-macOS VoiceOver smoke, candidate approval, and separate publication approval.
+external publication. Gate 5C still requires the recorded manual keyboard
+smoke, candidate approval, and separate publication approval. The approved
+amendment makes formal VoiceOver verification and accessibility conformance
+outside the v1 scope.
 
 ## Gate 5A evidence
 
@@ -28,8 +30,11 @@ macOS VoiceOver smoke, candidate approval, and separate publication approval.
   corpus reconciliation without inventing missing per-curve attribution.
 - `docs/Known-Limitations.md` is the authoritative product and scientific
   limitation record linked from release-facing documentation.
-- `docs/Release-Checklist.md` keeps manual accessibility and owner publication
+- `docs/Release-Checklist.md` keeps manual keyboard and owner publication
   actions explicit and incomplete.
+- macOS Apple Silicon is the sole supported platform. Windows launchers and
+  Linux/Windows compatibility claims are excluded; other platforms are
+  unsupported without being deliberately blocked in code.
 
 ## Gate 5B tooling
 
@@ -67,6 +72,6 @@ arm64 Mac running macOS 26.5.2. Evidence included:
 
 The command writes the exact candidate hashes and machine-readable environment
 record to ignored `dist/SHA256SUMS` and `dist/release-evidence.json`. Gate 5C
-remains blocked on the manual keyboard/VoiceOver record and explicit owner
-candidate approval. No tag, push, GitHub release, or external publication was
-performed.
+remains blocked on the manual keyboard record and explicit owner candidate
+approval. VoiceOver verification is not a release gate. No tag, push, GitHub
+release, or external publication was performed.

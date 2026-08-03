@@ -1,7 +1,7 @@
 # Gate 4 remaining parity and UX implementation
 
-Status: **Implemented and automated verification passed; manual keyboard and
-macOS VoiceOver smoke pending**
+Status: **Implemented and automated verification passed; manual keyboard smoke
+remains a Gate 5C usability check**
 
 Owner approval: `G4-D001` through `G4-D012` as written, 2026-08-03
 
@@ -133,8 +133,10 @@ limitations and exposure captions. Synthetic tests verify the WCAG
 relative-luminance choice for black/white text over filter colors.
 
 The in-app automation runtime could inspect focus structure but could not
-reliably synthesize native Tab/Space traversal for Streamlit controls. It is not
-a substitute for the explicitly approved manual macOS VoiceOver check.
+reliably synthesize native Tab/Space traversal for Streamlit controls. The
+manual keyboard usability check therefore remains in Gate 5C. A later approved
+Gate 5 amendment made formal VoiceOver verification and accessibility
+conformance outside the v1 scope.
 
 ## Acceptance status
 
@@ -147,13 +149,13 @@ a substitute for the explicitly approved manual macOS VoiceOver check.
 | Automated accessibility structure/contrast | Pass |
 | Documentation and launchers | Pass |
 | Performance and regression | Pass |
-| Manual keyboard and macOS VoiceOver smoke | **Pending owner/reference-machine run** |
+| Manual keyboard smoke | **Pending owner/reference-machine run in Gate 5C** |
+| VoiceOver verification | **Out of v1 scope by approved Gate 5 amendment** |
 
-Gate 4 code is implemented, reviewed, and automated verification is green.
-Under `G4-D008` and the approved exit criteria, Gate 4 must remain formally open
-until the manual keyboard and VoiceOver smoke confirms that no blocker prevents
-filter selection, advanced search, import, processing controls, or report
-download.
+Gate 4 code is implemented, reviewed, and automated verification is green. The
+approved Gate 5 amendment supersedes the earlier VoiceOver release gate. The
+manual keyboard check remains a Gate 5C usability requirement for filter
+selection, advanced search, import, processing controls, and report download.
 
 ## Scientific decisions
 

@@ -31,6 +31,16 @@ def test_release_version_and_privacy_configuration_are_explicit() -> None:
     assert config["browser"]["gatherUsageStats"] is False
 
 
+def test_supported_platform_is_macos_apple_silicon_only() -> None:
+    assert not (ROOT / "install.bat").exists()
+    assert not (ROOT / "start.bat").exists()
+    limitations = (ROOT / "docs/Known-Limitations.md").read_text(encoding="utf-8")
+    assert "sole supported platform is macOS on Apple Silicon" in limitations
+    assert "Linux, Windows, and all other" in limitations
+    assert "VoiceOver verification" in limitations
+    assert "outside the v1 release scope" in limitations
+
+
 def test_release_documentation_uses_one_authoritative_limitation_record() -> None:
     required = {
         "CHANGELOG.md",
@@ -45,7 +55,7 @@ def test_release_documentation_uses_one_authoritative_limitation_record() -> Non
     decision_path = ROOT / "docs/Gate5-Decision-Proposal.md"
     if decision_path.exists():
         decision = decision_path.read_text(encoding="utf-8")
-        assert "Approved for Gate 5A and Gate 5B implementation" in decision
+        assert "Approved and amended for macOS Apple Silicon-only support" in decision
         assert "does not authorize a tag" in decision
     checklist = (ROOT / "docs/Release-Checklist.md").read_text(encoding="utf-8")
     assert "Publication authority: **Not granted**" in checklist

@@ -34,7 +34,10 @@ FS FilterLab 1.0.0 completes the approved standalone v1 modernization from the
 - reflector patches remain illustrative sensor responses, not calibrated color;
 - bundled-data provenance may be incomplete and curves are not official
   manufacturer documentation;
-- Python 3.12 is required; macOS Apple Silicon is the verified release platform;
+- Python 3.12 is required; macOS Apple Silicon is the sole supported release
+  platform, while Linux, Windows, and Intel macOS are unsupported;
+- manual keyboard usability remains a release check; formal VoiceOver
+  verification and accessibility conformance are outside the v1 scope;
 - dependency installation may require package-index access, while normal use is
   local and Streamlit usage statistics are disabled;
 - see [docs/Known-Limitations.md](docs/Known-Limitations.md).

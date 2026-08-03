@@ -1,6 +1,6 @@
 # Gate 5 release decision proposal
 
-Status: **Approved for Gate 5A and Gate 5B implementation**
+Status: **Approved and amended for macOS Apple Silicon-only support**
 
 Prerequisites: Gate 2 scientific policies, Gate 3 vertical workflow, and Gate 4
 parity implementation complete
@@ -32,11 +32,13 @@ The release audit found:
 6. The verified delivery form is a local Python/Streamlit source application.
    Creating a native executable, installer, signed bundle, or notarized macOS
    application would be a new packaging project.
-7. macOS Apple Silicon is the only reference platform exercised end to end.
-   Windows batch launchers exist but have not run on Windows; Linux has not had
-   a native release smoke.
-8. All automated Gate 4 evidence is green. The explicitly required physical
-   keyboard and macOS VoiceOver smoke remains unperformed.
+7. macOS Apple Silicon is the only reference platform exercised end to end and
+   is the sole supported v1 platform. Intel macOS, Linux, Windows, and other
+   platforms are unsupported; the release does not deliberately prevent the
+   source from running elsewhere.
+8. All automated Gate 4 evidence is green. A physical keyboard usability smoke
+   remains required. Formal VoiceOver verification and accessibility
+   conformance are outside the v1 scope.
 
 ## Recommended decisions
 
@@ -50,8 +52,8 @@ Implement and review in order:
 2. **Gate 5B — Candidate construction:** deterministic archive builder,
    manifest/checksums, clean extracted-archive verification, and final
    performance/evidence report.
-3. **Gate 5C — Acceptance and publication:** manual keyboard/VoiceOver result,
-   owner inspection of the candidate, final approval, tag, and optional GitHub
+3. **Gate 5C — Acceptance and publication:** manual keyboard result, owner
+   inspection of the candidate, final approval, tag, and optional GitHub
    publication.
 
 Approval of this sheet authorizes Gate 5A and Gate 5B local repository work. It
@@ -76,7 +78,8 @@ certified.
 
 Both archives contain the same release tree:
 
-- application source, launchers, requirements, constraints, and `VERSION`;
+- application source, macOS shell launchers, requirements, constraints, and
+  `VERSION`;
 - populated bundled `data/`, including its license and vendor notices;
 - README, usage/technical documentation, changelog, known limitations,
   third-party notices, and application license;
@@ -93,19 +96,20 @@ Exclude:
 Installation may require package access. After dependencies are installed, the
 application must operate locally without external services.
 
-### G5-D004 — State the supported-platform contract conservatively
+### G5-D004 — Support macOS Apple Silicon only
 
-- **Verified:** macOS on the reference 2020 M1 MacBook Air, Python 3.12.
-- **Expected/best effort:** Linux with POSIX shell and Python 3.12.
-- **Experimental until native smoke:** Windows 10/11 with `py -3.12` and the
-  included batch launchers.
+- **Supported and verified:** macOS Apple Silicon on the reference 2020 M1
+  MacBook Air, Python 3.12.
+- **Unsupported:** Intel macOS, Linux, Windows, and all other platforms.
+- Remove Windows batch launchers and do not publish Linux or Windows
+  compatibility claims.
+- Do not deliberately add an operating-system block; the source may happen to
+  run elsewhere without creating a support commitment.
 - Browser support follows the current Streamlit-supported modern browser set;
   no browser-specific compatibility guarantee is added.
-- Do not claim Intel macOS, Linux, or Windows as verified until the exact
-  release archive completes a native clean-install and workflow smoke there.
 
-This avoids blocking the local macOS v1 on unavailable machines while keeping
-unverified platform claims explicit.
+This defines a narrow support contract around the product's intended and
+verified environment.
 
 ### G5-D005 — Make local/offline and privacy behavior testable
 
@@ -160,7 +164,7 @@ unverified platform claims explicit.
 - imported CSV quantity/unit/domain requirements and explicit extrapolation;
 - bundled curves are reference data, not official manufacturer specifications;
 - incomplete per-dataset provenance and no endorsement;
-- Python 3.12 and verified/experimental platform distinctions;
+- Python 3.12 and the macOS Apple Silicon-only support boundary;
 - dependency installation may require internet access, while normal use is
   local/offline;
 - local Streamlit application delivery, not a native signed/notarized app;
@@ -198,19 +202,21 @@ must:
 
 A failure removes partial candidates and leaves prior artifacts untouched.
 
-### G5-D010 — Keep accessibility a stable-release blocker
+### G5-D010 — Retain keyboard usability; make VoiceOver out of scope
 
 - Gate 4 automated structure, contrast, captions, and 1280/768/390 responsive
   evidence remains required.
 - Before `v1.0.0`, a person on the reference Mac must complete the primary
   workflow, advanced search, importer navigation, balance/mixer controls, and
   report download using Tab/Shift-Tab/Space/Enter without a pointer.
-- Repeat the same essential path with macOS VoiceOver and record date, macOS
-  version, browser, result, and any blocker.
-- Specifically confirm the narrow-window Open/Close filter-control announcement
-  and focus behavior.
-- A blocker must be fixed and retested. Approval of this decision sheet does not
-  itself count as the manual test result.
+- Specifically confirm the narrow-window Open/Close filter-control focus
+  behavior.
+- Preserve existing accessible labels, captions, contrast, and semantic
+  structure as low-cost quality safeguards.
+- Formal VoiceOver verification and accessibility-conformance claims are
+  outside the v1 release scope and do not block release.
+- A keyboard blocker must be fixed and retested. Approval of this decision
+  sheet does not itself count as the manual keyboard result.
 
 ### G5-D011 — Make candidate integrity auditable without promising universal reproducibility
 
@@ -228,7 +234,7 @@ A failure removes partial candidates and leaves prior artifacts untouched.
 Gate 5C has two explicit owner actions:
 
 1. **Candidate approval:** owner accepts the final artifacts, checksums, known
-   limitations, license/provenance report, manual accessibility result, and
+   limitations, license/provenance report, manual keyboard result, and
    release notes.
 2. **Publication approval:** owner separately authorizes the exact commit/tag,
    remote, and release assets to publish.
@@ -256,8 +262,8 @@ direction. No automatic updater or rollback service is added.
 | Dependencies | Exact runtime versions and complete license/notice inventory |
 | Data licensing | MIT/data/vendor notices retained; provenance limitation accepted |
 | Known limitations | One authoritative document linked from README/release notes |
-| Platforms | macOS verified; Linux best effort; Windows experimental unless tested |
-| Accessibility | Manual keyboard and VoiceOver paths pass with recorded environment |
+| Platforms | macOS Apple Silicon is the sole supported platform |
+| Accessibility | Manual keyboard path passes; VoiceOver verification is out of scope |
 | Performance | Approved Gate 4 budgets pass on the reference machine |
 | Publication | Exact candidate and remote approved before any external mutation |
 
@@ -271,7 +277,7 @@ Gate 5 exits only when:
    clean-install, offline, workflow, PNG, and performance verification.
 4. Dependency licenses have no unresolved or incompatible entry.
 5. The owner accepts the incomplete per-dataset provenance limitation.
-6. Manual keyboard and VoiceOver smoke has no blocker.
+6. Manual keyboard smoke has no blocker; VoiceOver verification is not a gate.
 7. Known limitations and release notes match the verified product.
 8. The exact candidate receives owner approval.
 9. If publication is requested, the exact tag, remote, and assets receive a
@@ -282,3 +288,10 @@ Gate 5 exits only when:
 The owner approved `G5-D001` through `G5-D012` as written. This authorizes
 local Gate 5A and Gate 5B implementation only. It does not authorize a tag,
 push, GitHub release, or other external publication.
+
+The owner subsequently approved a platform/accessibility amendment: macOS
+Apple Silicon is the sole supported platform; Intel macOS, Linux, Windows, and
+other platforms are unsupported; Windows launchers are removed; the manual
+keyboard smoke remains required; and VoiceOver verification and formal
+accessibility conformance are outside the v1 scope. This amendment supersedes
+the original `G5-D004`, `G5-D010`, and related Gate 5 wording.

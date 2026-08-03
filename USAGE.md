@@ -2,9 +2,10 @@
 
 ## Start the application
 
-Install once with `./install.sh` on Linux/macOS or `install.bat` on Windows.
-Launch later with `./run.sh` or `start.bat`. The app is available at
-<http://localhost:8501> by default.
+On supported macOS Apple Silicon systems, install once with `./install.sh` and
+launch later with `./run.sh`. The app is available at
+<http://localhost:8501> by default. Linux, Windows, and Intel macOS are
+unsupported.
 
 ## Named filter workflow
 

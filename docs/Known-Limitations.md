@@ -41,17 +41,21 @@ These limitations define the FS FilterLab 1.0.0 release boundary.
   promised.
 - Normal use is local and offline after dependencies are installed. Streamlit
   usage statistics are disabled in the release configuration.
-- The verified platform is macOS on the 2020 M1 MacBook Air reference machine.
-  Linux is expected/best effort. Windows 10/11 launchers are experimental until
-  the exact release archive completes a native Windows smoke.
+- The sole supported platform is macOS on Apple Silicon, verified on the 2020
+  M1 MacBook Air reference machine. Intel macOS, Linux, Windows, and all other
+  platforms are unsupported. The source may happen to run there, but that is
+  not a compatibility commitment.
 - Delivery is a Python/Streamlit source application that starts a localhost
   server. It is not a native, signed, or notarized desktop application.
 
 ## Accessibility and product boundary
 
 - Automated labels, focus structure, contrast, captions, and responsive layouts
-  have been checked. The stable release still requires the recorded manual
-  keyboard and macOS VoiceOver workflow in the release checklist.
+  have been checked. Existing accessible labels and keyboard behavior are
+  retained, and the stable release still requires the recorded manual keyboard
+  usability workflow in the release checklist.
+- Formal VoiceOver verification and accessibility-conformance claims are
+  outside the v1 release scope.
 - The application has no hosting, accounts, database, collaboration, analytics,
   telemetry, RAW decoding, image-development pipeline, or automatic updater.
 - Imported spectra, generated caches, and reports are local files. Users are

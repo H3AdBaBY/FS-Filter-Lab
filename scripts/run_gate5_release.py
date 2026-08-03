@@ -221,7 +221,9 @@ def _publish_candidates(
             "invalid": 0,
         },
         "offline_non_loopback_denied": True,
-        "manual_keyboard_voiceover": "pending",
+        "supported_platform": "macOS Apple Silicon",
+        "manual_keyboard": "pending",
+        "voiceover_verification": "out_of_scope",
         "publication_authority": "not_granted",
     }
     (publish_dir / "release-evidence.json").write_text(
@@ -248,6 +250,10 @@ def _publish_candidates(
 def main() -> int:
     if sys.version_info[:2] != (3, 12):
         raise SystemExit("Gate 5 release verification requires Python 3.12")
+    if sys.platform != "darwin" or platform.machine() != "arm64":
+        raise SystemExit(
+            "Gate 5 release verification requires supported macOS Apple Silicon"
+        )
     release_candidate.assert_clean_source()
     DEPENDENCY_CACHE.mkdir(parents=True, exist_ok=True)
     (DEPENDENCY_CACHE / "pip").mkdir(exist_ok=True)
@@ -312,7 +318,7 @@ def main() -> int:
         final_dir = _publish_candidates(build_one, hashes_one, metadata)
     print(f"Gate 5 local candidates published to {final_dir}")
     print("Gate 5A/Gate 5B automated verification: passed")
-    print("Gate 5C manual accessibility and publication approvals: pending")
+    print("Gate 5C manual keyboard and publication approvals: pending")
     return 0
 
 

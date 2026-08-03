@@ -1,6 +1,7 @@
 # FS FilterLab 1.0.0 release checklist
 
-Status: **Gate 5A/Gate 5B implementation in progress**
+Status: **Gate 5A/Gate 5B automated verification complete; Gate 5C manual
+keyboard and owner approvals pending**
 
 Publication authority: **Not granted**
 
@@ -49,21 +50,12 @@ Without using a pointer:
 
 Result/blockers:
 
-## macOS VoiceOver smoke — required
+## Accessibility scope
 
-Using the same environment and archive:
-
-- [ ] Open/Close filter controls are announced clearly at narrow width.
-- [ ] Headings and control groups convey the visual workflow structure.
-- [ ] Filter selection and advanced search are understandable and operable.
-- [ ] Import controls expose type, quantity, unit, and extrapolation labels.
-- [ ] Balance, mixer, visibility, and surface controls expose their state.
-- [ ] Charts expose titles/axes/traces and nearby metric summaries.
-- [ ] Warnings, errors, zero states, and preview limitations are announced.
-- [ ] Report generation and download are understandable and operable.
-- [ ] No blocker prevents completing the named workflow.
-
-Result/blockers:
+Existing accessible labels, captions, contrast, focus structure, and keyboard
+behavior remain product quality safeguards. Formal VoiceOver verification and
+accessibility-conformance claims are outside the v1 scope and are not release
+blockers.
 
 ## Owner gates
 

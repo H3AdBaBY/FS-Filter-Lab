@@ -1,5 +1,11 @@
 # Gate 4 Remaining Parity and UX Decision Proposal
 
+Historical record: the approved Gate 5 platform/accessibility amendment
+supersedes Gate 4 references to Windows launchers and mandatory VoiceOver
+verification. The current release contract supports macOS Apple Silicon only,
+retains the manual keyboard usability smoke, and places formal VoiceOver
+verification outside the v1 scope.
+
 Status: **Approved for implementation**
 
 Prerequisites: Gate 2 scientific policies and Gate 3 vertical workflow accepted

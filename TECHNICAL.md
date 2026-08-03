@@ -2,9 +2,11 @@
 
 ## Architecture boundary
 
-FS FilterLab is a local Python 3.12 and Streamlit application. It has no hosting,
-accounts, database, telemetry, RAW pipeline, or dependency on another product.
-Gate 4 preserves the existing production architecture and scientific formulas.
+FS FilterLab is a local Python 3.12 and Streamlit application supported on
+macOS Apple Silicon. Intel macOS, Linux, Windows, and other platforms are
+unsupported. It has no hosting, accounts, database, telemetry, RAW pipeline, or
+dependency on another product. Gate 4 preserves the existing production
+architecture and scientific formulas.
 
 ```text
 models/      immutable value objects and constants

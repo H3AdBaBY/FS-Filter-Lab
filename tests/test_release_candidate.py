@@ -19,6 +19,8 @@ def test_release_allowlist_is_populated_and_excludes_local_or_planning_state() -
     assert "data/LICENSE" in files
     assert "docs/Known-Limitations.md" in files
     assert "scripts/release_candidate.py" in files
+    assert "install.bat" not in files
+    assert "start.bat" not in files
     assert not any("Proposal" in path for path in files)
     assert not any(release_candidate._is_forbidden(path) for path in files)
 

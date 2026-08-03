@@ -21,27 +21,25 @@ calibrated color predictions.
 
 ## Install and run
 
-Requirements: Python 3.12 and `pip`. Git is needed for a source checkout whose
-data submodule has not been initialized; it is not needed for a release archive
-that already contains `data/`.
+Supported platform: macOS on Apple Silicon. Requirements: Python 3.12 and
+`pip`. Git is needed for a source checkout whose data submodule has not been
+initialized; it is not needed for a release archive that already contains
+`data/`.
 
-On Linux or macOS:
+On macOS:
 
 ```bash
 ./install.sh
 ./run.sh
 ```
 
-On Windows:
-
-```bat
-install.bat
-start.bat
-```
-
 The installer creates `.venv`, installs the pinned Python 3.12 dependency set,
 and exits. The run command checks the environment and bundled data before
 starting Streamlit. Open <http://localhost:8501> if a browser does not open.
+
+Linux, Windows, Intel macOS, and other platforms are unsupported. The source
+may happen to run elsewhere, but no compatibility commitment or verification
+is provided outside macOS Apple Silicon.
 
 Dependency installation requires package access unless the dependencies are
 already cached. After installation, normal application use is local and does
