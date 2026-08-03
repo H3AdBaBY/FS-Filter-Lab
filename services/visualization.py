@@ -325,13 +325,17 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
     maxresp = 0
     stack = {}
     
-    responses = channel_responses or _calculate_channel_responses(
-        active_trans,
-        current_qe,
-        {"R": True, "G": True, "B": True},
-        wb,
-        apply_white_balance,
-        channel_mixer,
+    responses = (
+        channel_responses
+        if channel_responses is not None
+        else _calculate_channel_responses(
+            active_trans,
+            current_qe,
+            {"R": True, "G": True, "B": True},
+            wb,
+            apply_white_balance,
+            channel_mixer,
+        )
     )
 
     # Plot in correct RGB order
@@ -353,14 +357,22 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
     if mv > 0:
         rgb_matrix /= mv
     
-    extent = [interp_grid.min(), interp_grid.max(), maxresp * 1.02, maxresp * 1.07]
+    display_max = max(maxresp, 1.0)
+    extent = [
+        interp_grid.min(), interp_grid.max(), display_max * 1.02,
+        display_max * 1.07,
+    ]
     ax4.imshow(rgb_matrix[np.newaxis, :, :], aspect='auto', extent=extent)
 
     processing = []
     if apply_white_balance:
         processing.append("Balanced")
     if channel_mixer is not None and channel_mixer.enabled:
-        processing.append("Mixed")
+        from services.channel_mixer import is_identity_matrix
+
+        processing.append(
+            "Mixer Identity" if is_identity_matrix(channel_mixer) else "Mixed"
+        )
     suffix = f" ({', '.join(processing)})" if processing else ""
     ax4.set_title(f'Sensor-Weighted Response{suffix}', fontsize=REPORT_CONFIG['font_sizes']['title'], fontweight='bold')
     subtitle = f"Quantum Efficiency: {camera_name or 'None'}   |   Illuminant: {illuminant_name or 'None'}"
@@ -369,7 +381,8 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
     ax4.set_ylabel('Response (%)')
     ax4.set_xlim(interp_grid.min(), interp_grid.max())
     ax4.set_ylim(0, extent[3] * 1.02)
-    ax4.legend(loc='upper right', fontsize=REPORT_CONFIG['font_sizes']['legend'], bbox_to_anchor=(1.0, 0.95))
+    if stack:
+        ax4.legend(loc='upper right', fontsize=REPORT_CONFIG['font_sizes']['legend'], bbox_to_anchor=(1.0, 0.95))
 
 
 def _save_report_to_file(fig, buf: io.BytesIO, fname: str, camera_name: str, illuminant_name: str, sanitize_fn: Callable):
@@ -736,7 +749,7 @@ def _update_response_plot_layout(
     fig: go.Figure,
     has_spectrum_strip: bool,
     is_white_balanced: bool,
-    is_channel_mixed: bool
+    channel_mixer: Optional[ChannelMixerSettings],
 ) -> None:
     """
     Update the layout of a sensor response plot.
@@ -745,11 +758,19 @@ def _update_response_plot_layout(
         fig: The plotly figure to update
         has_spectrum_strip: Whether the plot has a spectrum strip
         is_white_balanced: Whether white balancing is applied
-        is_channel_mixed: Whether channel mixing is applied
+        channel_mixer: Current optional mixer state
     """
     # Update title to reflect current state
     wb_status = " (White Balanced)" if is_white_balanced else ""
-    mixer_status = " (Channel Mixed)" if is_channel_mixed else ""
+    mixer_status = ""
+    if channel_mixer is not None and channel_mixer.enabled:
+        from services.channel_mixer import is_identity_matrix
+
+        mixer_status = (
+            " (Mixer Enabled: Identity)"
+            if is_identity_matrix(channel_mixer)
+            else " (Channel Mixed)"
+        )
     title = f"Sensor Response{wb_status}{mixer_status}"
     
     # Determine plot height based on contents
@@ -840,9 +861,17 @@ def create_sensor_response_plot(
     fig = go.Figure()
     
     # Calculate channel responses
-    responses = channel_responses or _calculate_channel_responses(
-        transmission, qe_data, visible_channels,
-        white_balance_gains, apply_white_balance, channel_mixer
+    responses = (
+        channel_responses
+        if channel_responses is not None
+        else _calculate_channel_responses(
+            transmission,
+            qe_data,
+            visible_channels,
+            white_balance_gains,
+            apply_white_balance,
+            channel_mixer,
+        )
     )
     
     # Plot each channel response
@@ -912,8 +941,8 @@ def create_sensor_response_plot(
     _update_response_plot_layout(
         fig, 
         len(responses) >= 3,
-        apply_white_balance, 
-        channel_mixer and channel_mixer.enabled
+        apply_white_balance,
+        channel_mixer,
     )
     
     return fig

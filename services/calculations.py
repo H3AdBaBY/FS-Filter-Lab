@@ -449,7 +449,9 @@ def compute_reflector_color(
     transmission: np.ndarray,
     quantum_efficiency: Dict[str, np.ndarray],
     illuminant: np.ndarray,
-    channel_mixer: Optional[ChannelMixerSettings] = None
+    channel_mixer: Optional[ChannelMixerSettings] = None,
+    balance_divisors: Optional[Dict[str, float]] = None,
+    apply_white_balance: bool = False,
 ) -> np.ndarray:
     """
     Compute reflector color from reflector, transmission, QE, and illuminant.
@@ -496,10 +498,15 @@ def compute_reflector_color(
             illuminant[valid]
         )
 
-    # Apply the approved multiplicative correction exactly once.
-    rgb_values = np.zeros(3)
-    for i, ch in enumerate(['R', 'G', 'B']):
-        rgb_values[i] = rgb_resp.get(ch, 0.0) * balance.balance_multipliers[ch]
+    rgb_values = np.array([rgb_resp.get(ch, 0.0) for ch in ('R', 'G', 'B')])
+    if apply_white_balance:
+        divisors = balance_divisors or balance.balance_divisors
+        rgb_values = np.array(
+            [
+                rgb_values[index] / divisors[channel]
+                for index, channel in enumerate(('R', 'G', 'B'))
+            ]
+        )
     
     # Apply channel mixing if enabled
     if channel_mixer is not None and channel_mixer.enabled:
@@ -559,7 +566,9 @@ def compute_reflector_preview_colors(
     qe_data: Dict[str, np.ndarray],
     illuminant: np.ndarray,
     reflector_collection: ReflectorCollection = None,
-    channel_mixer: Optional[ChannelMixerSettings] = None
+    channel_mixer: Optional[ChannelMixerSettings] = None,
+    balance_divisors: Optional[Dict[str, float]] = None,
+    apply_white_balance: bool = False,
 ) -> Optional[np.ndarray]:
     """
     Compute colors for vegetation preview using hardcoded leaf files only.
@@ -598,7 +607,15 @@ def compute_reflector_preview_colors(
             grid_idx = i * 2 + j
             reflector_idx = leaf_indices[grid_idx]
             reflector = reflector_matrix[reflector_idx]
-            pixels[i, j] = compute_reflector_color(reflector, transmission, qe_data, illuminant, channel_mixer)
+            pixels[i, j] = compute_reflector_color(
+                reflector,
+                transmission,
+                qe_data,
+                illuminant,
+                channel_mixer,
+                balance_divisors,
+                apply_white_balance,
+            )
     
     # Replace any NaN values with zeros
     pixels = np.nan_to_num(pixels)
@@ -616,7 +633,9 @@ def compute_single_reflector_color(
     transmission: np.ndarray,
     qe_data: Dict[str, np.ndarray],
     illuminant: np.ndarray,
-    channel_mixer: Optional[ChannelMixerSettings] = None
+    channel_mixer: Optional[ChannelMixerSettings] = None,
+    balance_divisors: Optional[Dict[str, float]] = None,
+    apply_white_balance: bool = False,
 ) -> Optional[np.ndarray]:
     """
     Compute color for a single selected reflector.
@@ -641,7 +660,15 @@ def compute_single_reflector_color(
     
     # Compute color for the selected reflector
     reflector = reflector_matrix[selected_idx]
-    color = compute_reflector_color(reflector, transmission, qe_data, illuminant, channel_mixer)
+    color = compute_reflector_color(
+        reflector,
+        transmission,
+        qe_data,
+        illuminant,
+        channel_mixer,
+        balance_divisors,
+        apply_white_balance,
+    )
     
     # Replace any NaN values with zeros
     color = np.nan_to_num(color)

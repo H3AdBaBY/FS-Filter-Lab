@@ -48,6 +48,15 @@ class WorkflowSnapshot:
         return bool(self.selected_indices)
 
     @property
+    def plotted_channel_responses(self) -> Dict[str, np.ndarray]:
+        """Presentation-only visibility applied to analytical responses."""
+        return {
+            channel: values
+            for channel, values in self.channel_responses.items()
+            if self.visible_channels.get(channel, True)
+        }
+
+    @property
     def identity(self) -> Tuple[Any, ...]:
         """Stable identity used to prevent stale report downloads."""
         mixer_identity = tuple(sorted(self.channel_mixer.to_dict().items()))
@@ -82,6 +91,9 @@ class WorkflowSnapshot:
             "balance_multipliers": dict(balance.balance_multipliers),
             "balance_applied": self.apply_white_balance,
             "mixer_enabled": self.channel_mixer.enabled,
+            "mixer_identity": bool(
+                np.allclose(self.channel_mixer.to_matrix(), np.eye(3))
+            ),
             "workflow_identity": self.identity,
         }
 
@@ -131,11 +143,7 @@ def build_workflow_snapshot(
         all_responses, _, _ = compute_rgb_response(
             active, current_qe, response_divisors, visibility, mixer
         )
-        responses = {
-            channel: values
-            for channel, values in all_responses.items()
-            if visibility.get(channel, True)
-        }
+        responses = all_responses
     else:
         responses = {}
 

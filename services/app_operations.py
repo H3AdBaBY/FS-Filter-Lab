@@ -222,7 +222,7 @@ def generate_application_report(
         illuminant_curve=snapshot.illuminant_curve,
         apply_white_balance=snapshot.apply_white_balance,
         channel_mixer=snapshot.channel_mixer,
-        channel_responses=snapshot.channel_responses,
+        channel_responses=snapshot.plotted_channel_responses,
     )
     
     filter_data = create_filter_data(

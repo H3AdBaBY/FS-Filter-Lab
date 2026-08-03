@@ -393,13 +393,15 @@ def _render_sensor_response_plot(app_state, workflow_snapshot) -> None:
         apply_white_balance=app_state.apply_white_balance,
         target_profile=app_state.target_profile,
         channel_mixer=app_state.channel_mixer,
-        channel_responses=workflow_snapshot.channel_responses,
+        channel_responses=workflow_snapshot.plotted_channel_responses,
     )
     
     sensor_response_display(fig_response)
 
 
-def _render_vegetation_preview(app_state, trans_interp, reflector_collection) -> Optional[np.ndarray]:
+def _render_vegetation_preview(
+    app_state, workflow_snapshot, reflector_collection
+) -> Optional[np.ndarray]:
     """Render vegetation color preview and return pixels for normalization."""
     from services.calculations import compute_reflector_preview_colors
     from views.sidebar import reflector_preview
@@ -409,8 +411,14 @@ def _render_vegetation_preview(app_state, trans_interp, reflector_collection) ->
     
     if len(reflector_matrix) >= 4:
         pixels = compute_reflector_preview_colors(
-            reflector_matrix, trans_interp, app_state.current_qe, 
-            app_state.illuminant, reflector_collection, app_state.channel_mixer
+            reflector_matrix,
+            workflow_snapshot.active_transmission,
+            app_state.current_qe,
+            app_state.illuminant,
+            reflector_collection,
+            app_state.channel_mixer,
+            balance_divisors=workflow_snapshot.balance_result.balance_divisors,
+            apply_white_balance=workflow_snapshot.apply_white_balance,
         )
         
         if pixels is not None:
@@ -424,7 +432,9 @@ def _render_vegetation_preview(app_state, trans_interp, reflector_collection) ->
     return None
 
 
-def _render_single_reflector_preview(app_state, trans_interp, reflector_collection, pixels) -> None:
+def _render_single_reflector_preview(
+    app_state, workflow_snapshot, reflector_collection, pixels
+) -> None:
     """Render single reflector preview if one is selected."""
     import streamlit as st
     
@@ -442,8 +452,14 @@ def _render_single_reflector_preview(app_state, trans_interp, reflector_collecti
         selected_reflector_idx < len(reflector_matrix)):
         
         single_color = compute_single_reflector_color(
-            reflector_matrix, selected_reflector_idx, trans_interp, 
-            app_state.current_qe, app_state.illuminant, app_state.channel_mixer
+            reflector_matrix,
+            selected_reflector_idx,
+            workflow_snapshot.active_transmission,
+            app_state.current_qe,
+            app_state.illuminant,
+            app_state.channel_mixer,
+            balance_divisors=workflow_snapshot.balance_result.balance_divisors,
+            apply_white_balance=workflow_snapshot.apply_white_balance,
         )
         
         if single_color is not None:
@@ -457,8 +473,14 @@ def _render_single_reflector_preview(app_state, trans_interp, reflector_collecti
                 all_colors = []
                 for i in range(min(len(reflector_matrix), 4)):
                     color = compute_single_reflector_color(
-                        reflector_matrix, i, trans_interp,
-                        app_state.current_qe, app_state.illuminant, app_state.channel_mixer
+                        reflector_matrix,
+                        i,
+                        workflow_snapshot.active_transmission,
+                        app_state.current_qe,
+                        app_state.illuminant,
+                        app_state.channel_mixer,
+                        balance_divisors=workflow_snapshot.balance_result.balance_divisors,
+                        apply_white_balance=workflow_snapshot.apply_white_balance,
                     )
                     if color is not None:
                         all_colors.append(color)
@@ -469,7 +491,9 @@ def _render_single_reflector_preview(app_state, trans_interp, reflector_collecti
             show_info_message(UI_INFO_MESSAGES['color_compute_failed'])
 
 
-def _render_reflector_previews(app_state, trans_interp, reflector_collection) -> None:
+def _render_reflector_previews(
+    app_state, workflow_snapshot, reflector_collection
+) -> None:
     """Render all reflector color previews."""
     from services.calculations import (
         is_reflector_data_valid,
@@ -492,10 +516,14 @@ def _render_reflector_previews(app_state, trans_interp, reflector_collection) ->
         show_warning_message(UI_WARNING_MESSAGES['incomplete_reflector_data'])
     
     # Render vegetation preview first (returns pixels for normalization)
-    pixels = _render_vegetation_preview(app_state, trans_interp, reflector_collection)
+    pixels = _render_vegetation_preview(
+        app_state, workflow_snapshot, reflector_collection
+    )
     
     # Render single reflector preview using the same normalization
-    _render_single_reflector_preview(app_state, trans_interp, reflector_collection, pixels)
+    _render_single_reflector_preview(
+        app_state, workflow_snapshot, reflector_collection, pixels
+    )
 
 
 def _render_sensor_analysis(app_state, data, workflow_snapshot):
@@ -505,7 +533,6 @@ def _render_sensor_analysis(app_state, data, workflow_snapshot):
     # Extract data
     reflector_collection = data['reflector_collection']
     
-    trans_interp = workflow_snapshot.active_transmission
     balance = workflow_snapshot.balance_result
     if balance.available:
         app_state.white_balance_gains = balance.balance_divisors
@@ -514,7 +541,7 @@ def _render_sensor_analysis(app_state, data, workflow_snapshot):
     _render_sensor_response_plot(app_state, workflow_snapshot)
     
     # Render reflector previews
-    _render_reflector_previews(app_state, trans_interp, reflector_collection)
+    _render_reflector_previews(app_state, workflow_snapshot, reflector_collection)
     
     # Display white balance information
     if balance.available:

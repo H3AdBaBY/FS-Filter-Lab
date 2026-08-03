@@ -73,6 +73,7 @@ def render_channel_mixer_panel(mixer_settings: ChannelMixerSettings) -> ChannelM
     
     # Compact slider grid
     _render_compact_sliders(mixer_settings)
+    render_compact_channel_mixer_status(mixer_settings)
     
     return mixer_settings
 

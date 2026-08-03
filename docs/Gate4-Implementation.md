@@ -1,6 +1,6 @@
 # Gate 4 Remaining Parity and UX Implementation
 
-Status: **In progress — Gate 4A verified**
+Status: **In progress — Gate 4A and Gate 4B verified**
 
 Owner approval: `G4-D001` through `G4-D012` as written, 2026-08-03
 
@@ -36,4 +36,25 @@ Gate 3 Streamlit interaction/export, PNG inspection, all provisional Gate 3
 performance budgets, and `pip check` passed. Imported fixture data was written
 only to temporary user-data roots.
 
-Gate 4B and Gate 4C remain unimplemented at this checkpoint.
+## Gate 4B — Processing parity
+
+Implemented:
+
+- analytical R, G, and B response arrays remain available regardless of chart
+  visibility;
+- visibility controls only interactive and PNG plotted traces;
+- optional balance is applied exactly once before the mixer for vegetation and
+  selected-surface previews;
+- mixer-disabled, enabled-identity, custom/swap, negative, and above-range
+  analytical states remain deterministic and unclipped;
+- enabled identity is labeled explicitly and remains numerically invariant;
+- identity reset preserves the enabled panel state;
+- Gate 3 workflow snapshots provide processing state to plots, previews, report
+  metadata, and PNG rendering;
+- all-hidden report state remains valid without fabricated channel traces.
+
+Verification checkpoint: **49 passed** on Python 3.12.13; the complete prior
+suite, bundled reconciliation, Streamlit/PNG smoke, performance budgets, and
+`pip check` passed.
+
+Gate 4C remains unimplemented at this checkpoint.
