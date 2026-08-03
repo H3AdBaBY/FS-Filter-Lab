@@ -1,7 +1,7 @@
 # Gate 5 implementation record
 
-Status: **Gate 5A evidence implemented; Gate 5B tooling implemented with full
-clean-tree verification pending**
+Status: **Gate 5A and Gate 5B automated implementation complete; Gate 5C
+manual acceptance and publication pending**
 
 Version: `1.0.0`
 
@@ -46,5 +46,27 @@ macOS VoiceOver smoke, candidate approval, and separate publication approval.
   archive twice, verifies identical hashes, then installs and exercises both
   extracted forms before atomically replacing ignored `dist/` candidates.
 
-Construction results and exact artifact hashes will be recorded only after the
-full clean-tree release command passes.
+## Automated verification result
+
+The complete command passed on 2026-08-03 using Python 3.12.13 on the reference
+arm64 Mac running macOS 26.5.2. Evidence included:
+
+- 63 deterministic tests and the complete Gate 4 launcher/workflow matrix;
+- 1,566 discovered and accepted bundled TSV files, with zero skipped,
+  duplicate, or invalid entries;
+- 48 exact runtime distributions and four test-only distributions with zero
+  unresolved runtime licenses;
+- two consecutive byte-identical builds of each archive form;
+- manifest, checksum, mode, forbidden-path, and populated-data verification for
+  both extracted forms;
+- independent runtime installation, `pip check`, dataset audit, non-loopback
+  denial, localhost health, named filter/PNG workflow, and Gate 4 interactions
+  from both the tar.gz and ZIP candidates;
+- every recorded Gate 3 and Gate 4 performance measurement below its approved
+  budget.
+
+The command writes the exact candidate hashes and machine-readable environment
+record to ignored `dist/SHA256SUMS` and `dist/release-evidence.json`. Gate 5C
+remains blocked on the manual keyboard/VoiceOver record and explicit owner
+candidate approval. No tag, push, GitHub release, or external publication was
+performed.
