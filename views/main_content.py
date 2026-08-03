@@ -109,16 +109,23 @@ def transmission_metrics(
         return
     
     # Calculate effective stops with illuminant weighting
-    avg_trans, effective_stops = compute_effective_stops(trans, sensor_qe, illuminant)
+    result = compute_effective_stops(trans, sensor_qe, illuminant)
+    if not result.available:
+        from views.ui_utils import show_warning_message
+        show_warning_message(f"Cannot compute green-channel effective stops for {label}: {result.reason}.")
+        return
     
     # Format metrics
-    metrics = format_transmission_metrics(trans, label, avg_trans, effective_stops)
+    metrics = format_transmission_metrics(
+        trans, label, result.effective_transmission, result.effective_stops
+    )
+    coverage_note = "" if result.coverage == 1.0 else f", partial coverage: {result.coverage:.1%}"
     
     # Display results
     st.markdown(
-        f"**Estimated light loss ({metrics['label']}):** "
+        f"**Green-channel effective light loss ({metrics['label']}):** "
         f"{metrics['effective_stops']} stops  \n"
-        f"(Avg transmission: {metrics['avg_transmission_pct']})"
+        f"(Green-QE-weighted transmission: {metrics['avg_transmission_pct']}{coverage_note})"
     )
 
 
@@ -160,7 +167,7 @@ def white_balance_display(
     white_balance_gains: Dict[str, float],
     selected_filters: List[str]
 ) -> None:
-    """Display white balance gains in the UI."""
+    """Display applied sensor-response balance multipliers in the UI."""
     from services.calculations import format_white_balance_data
     
     # Format white balance data
@@ -170,7 +177,7 @@ def white_balance_display(
     no_filter_note = " (No filter selected)" if not wb_data["has_filters"] else ""
     
     st.markdown(
-        f"**White Balance Gains{no_filter_note}:** (Green = 1.000):  \n"
+        f"**Sensor-Response Balance Multipliers{no_filter_note}:** (Green = 1.000):  \n"
         f"R: {wb_data['intensities']['R']}   "
         f"G: {wb_data['intensities']['G']}   "
         f"B: {wb_data['intensities']['B']}"
@@ -285,8 +292,7 @@ def render_main_content(app_state, data):
     from services import (
         compute_filter_transmission,
         compute_active_transmission, 
-        compute_rgb_response,
-        compute_white_balance_gains
+        compute_rgb_response
     )
     from services.visualization import (
         create_filter_response_plot,
@@ -395,17 +401,19 @@ def _render_filter_analysis(app_state, filter_collection, selected_indices):
     deviation_metrics(trans, combined, app_state.target_profile)
 
 
-def _compute_white_balance(app_state, trans_interp) -> Dict[str, float]:
-    """Compute and update white balance gains."""
-    from services import compute_white_balance_gains
-    
-    wb_gains = app_state.white_balance_gains  # Default gains
+def _compute_white_balance(app_state, trans_interp):
+    """Compute and update structured sensor-response balance."""
+    from services import compute_white_balance
+
+    result = None
     if app_state.current_qe and app_state.illuminant is not None:
-        # Compute white balance regardless of filter selection
-        wb_gains = compute_white_balance_gains(trans_interp, app_state.current_qe, app_state.illuminant)
-        app_state.white_balance_gains = wb_gains  # Update state with computed gains
-    
-    return wb_gains
+        result = compute_white_balance(
+            trans_interp, app_state.current_qe, app_state.illuminant
+        )
+        if result.available:
+            app_state.white_balance_gains = result.balance_divisors
+
+    return result
 
 
 def _render_sensor_response_plot(app_state, trans_interp, wb_gains) -> None:
@@ -542,16 +550,23 @@ def _render_sensor_analysis(app_state, data, selected_indices):
     )
     
     # Compute and update white balance
-    wb_gains = _compute_white_balance(app_state, trans_interp)
+    balance = _compute_white_balance(app_state, trans_interp)
+    wb_divisors = (
+        balance.balance_divisors
+        if balance is not None and balance.available
+        else {"R": 1.0, "G": 1.0, "B": 1.0}
+    )
     
     # Render sensor response plot
-    _render_sensor_response_plot(app_state, trans_interp, wb_gains)
+    _render_sensor_response_plot(app_state, trans_interp, wb_divisors)
     
     # Render reflector previews
     _render_reflector_previews(app_state, trans_interp, reflector_collection)
     
     # Display white balance information
-    if app_state.current_qe and app_state.illuminant is not None:
-        white_balance_display(app_state.white_balance_gains, app_state.selected_filters)
+    if balance is not None and balance.available:
+        white_balance_display(balance.balance_divisors, app_state.selected_filters)
+    elif balance is not None:
+        show_info_message(f"Sensor-response balance unavailable: {balance.reason}.")
     else:
         show_info_message(UI_INFO_MESSAGES['qe_illuminant_required'])

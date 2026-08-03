@@ -243,6 +243,7 @@ def reflector_preview(pixels: np.ndarray, reflector_names: Optional[List[str]] =
     
     # Display in the sidebar
     st.sidebar.subheader(UI_SECTIONS['vegetation_preview'])
+    st.sidebar.caption("Illustrative sensor response; not calibrated color.")
     
     # Use camera-realistic normalization with independent channel saturation
     from services.visualization import prepare_rgb_for_display
@@ -284,13 +285,17 @@ def single_reflector_preview(
             saturation_level=global_max, 
             auto_exposure=False
         )
+        exposure_note = "Shared comparison exposure"
     else:
         # Independent normalization when no global reference
         pixel_normalized = prepare_rgb_for_display(pixel_color, auto_exposure=True)
+        exposure_note = "Independent auto-exposure"
     
     # Display the single color as a larger image
     st.sidebar.image(pixel_normalized, width=200, channels="RGB", output_format="PNG")
-    st.sidebar.caption(f"Selected: {reflector_name}")
+    st.sidebar.caption(
+        f"Selected: {reflector_name}. {exposure_note}; illustrative sensor response, not calibrated color."
+    )
 
 
 def render_sidebar(app_state, data):

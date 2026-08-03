@@ -17,7 +17,7 @@ Credit: 21.09.2025 Refactor based on 01luna's fork. Contains Vegetation Color Pr
 ## Quick Start
 
 ### Requirements
-- Python 3.8 or newer
+- Python 3.12
 - pip
 
 ### Install
@@ -29,6 +29,9 @@ Credit: 21.09.2025 Refactor based on 01luna's fork. Contains Vegetation Color Pr
    pip install -r requirements.txt
    ```
    Or use `install.bat` (Windows) or `install.sh` (Linux/macOS).
+
+   The direct dependencies are resolved through `constraints-py312.txt`, the
+   exact environment verified for the v1 scientific baseline.
 3. Run the app:
    ```bash
    streamlit run app.py
@@ -69,6 +72,24 @@ FS-FilterLab/
 
 - Delete .venv, then run install.bat/.sh to re-install dependencies
 - Use "Rebuild Cache" in the sidebar if you add or change data files. Alternatively, manually delete the /cache folder
+
+## Scientific baseline
+
+Run the complete deterministic suite, including all 1,566 bundled TSV files:
+
+```bash
+PYTHON_BIN=python3.12 bash scripts/run_gate1_baseline.sh
+```
+
+The calculations capture approved FS FilterLab policies; reflector previews are
+illustrative sensor responses, not calibrated color predictions.
+
+For the complete Gate 2 clean-install, scientific-suite, dataset-audit, cache,
+and application-startup verification:
+
+```bash
+PYTHON_BIN=python3.12 bash scripts/run_gate2_verification.sh
+```
 
 ## License
 

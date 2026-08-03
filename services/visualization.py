@@ -65,9 +65,6 @@ def _calculate_channel_responses(
     # Compute all responses
     responses = {}
     for channel, qe_curve in qe_data.items():
-        if not visible_channels.get(channel, True):
-            continue
-            
         # Calculate response
         response = transmission * qe_curve
         
@@ -82,8 +79,13 @@ def _calculate_channel_responses(
     if channel_mixer is not None and channel_mixer.enabled and responses:
         from services.channel_mixer import apply_channel_mixing_to_responses
         responses = apply_channel_mixing_to_responses(responses, channel_mixer)
-    
-    return responses
+
+    # Visibility affects plotted channels only, never white balance or mixer inputs.
+    return {
+        channel: response
+        for channel, response in responses.items()
+        if visible_channels.get(channel, True)
+    }
 
 
 def _create_line_style(color: str, style: str = 'default', dash: str = None) -> dict:
@@ -259,11 +261,20 @@ def _add_filter_swatches_section(ax0, selected_filters: List[str], df: Any, disp
         y0 -= 0.15
 
 
-def _add_light_loss_section(ax1, label: str, stops: float, avg_trans: float):
-    """Add light loss information section to the report."""
+def _add_light_loss_section(ax1, label: str, result: Any):
+    """Add the green-channel metric and its coverage to the report."""
     ax1.axis('off')
-    ax1.text(0.01, 0.7, 'Estimated Light Loss:', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
-    ax1.text(0.01, 0.3, f"{label} → {stops:.2f} stops (Avg: {avg_trans*100:.1f}%)", fontsize=REPORT_CONFIG['font_sizes']['section_header'])
+    ax1.text(0.01, 0.7, 'Green-Channel Effective Light Loss:', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
+    if not result.available:
+        detail = f"{label} → unavailable ({result.reason})"
+    else:
+        stops = "∞" if np.isposinf(result.effective_stops) else f"{result.effective_stops:.2f}"
+        detail = (
+            f"{label} → {stops} stops "
+            f"(Green-QE weighted: {result.effective_transmission * 100:.1f}%, "
+            f"coverage: {result.coverage:.1%})"
+        )
+    ax1.text(0.01, 0.3, detail, fontsize=REPORT_CONFIG['font_sizes']['section_header'])
 
 
 def _add_transmission_plot_section(ax2, selected_indices: List[int], df: Any, filter_matrix: np.ndarray, 
@@ -287,19 +298,16 @@ def _add_transmission_plot_section(ax2, selected_indices: List[int], df: Any, fi
     ax2.set_ylim(0, 100)
 
 
-def _add_white_balance_section(ax3, wb: Dict[str, float]):
-    """Add white balance gains section to the report."""
+def _add_white_balance_section(ax3, balance: Any):
+    """Add structured sensor-response balance to the report."""
     ax3.axis('off')
-    ax3.text(0.01, 0.6, 'White Balance Gains (Green = 1):', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
-    
-    # Convert gains back to raw intensities (relative to green)
-    intensities = {
-        'R': 1.0 / wb['R'] if wb['R'] != 0 else 0.0,
-        'G': 1.0,
-        'B': 1.0 / wb['B'] if wb['B'] != 0 else 0.0
-    }
-    
-    ax3.text(0.01, 0.4, f"R: {intensities['R']:.3f}   G: {intensities['G']:.3f}   B: {intensities['B']:.3f}", fontsize=REPORT_CONFIG['font_sizes']['section_header'])
+    ax3.text(0.01, 0.6, 'Sensor-Response Balance Multipliers (Green = 1):', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
+    if not balance.available:
+        detail = f"Unavailable: {balance.reason}"
+    else:
+        values = balance.balance_multipliers
+        detail = f"R: {values['R']:.3f}   G: {values['G']:.3f}   B: {values['B']:.3f}"
+    ax3.text(0.01, 0.4, detail, fontsize=REPORT_CONFIG['font_sizes']['section_header'])
 
 
 def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dict[str, float], 
@@ -440,8 +448,8 @@ def create_filter_data(
 def create_computation_functions(
     compute_selected_indices_fn: Callable[[List[str]], List[int]],
     compute_filter_transmission_fn: Callable[[List[int]], Tuple[np.ndarray, str, np.ndarray]],
-    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Tuple[float, float]],
-    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Dict[str, float]],
+    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Any],
+    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Any],
     add_curve_fn: Callable,
     sanitize_fn: Callable[[str], str]
 ) -> ComputationFunctions:
@@ -499,8 +507,8 @@ def generate_report_png(
     display_to_index: Dict[str, int],
     compute_selected_indices_fn: Callable[[List[str]], List[int]],
     compute_filter_transmission_fn: Callable[[List[int]], Tuple[np.ndarray, str, np.ndarray]],
-    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Tuple[float, float]],
-    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Dict[str, float]],
+    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Any],
+    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Any],
     masks: np.ndarray,
     add_curve_fn: Callable,
     interp_grid: np.ndarray,
@@ -533,8 +541,9 @@ def generate_report_png(
     # Compute filter characteristics
     trans, label, combined = compute_filter_transmission_fn(selected_indices)
     active_trans = combined if combined is not None else trans
-    avg_trans, stops = compute_effective_stops_fn(active_trans, sensor_qe, illuminant_curve)
-    wb = compute_white_balance_gains_fn(active_trans, current_qe, illuminant_curve)
+    effective_result = compute_effective_stops_fn(active_trans, sensor_qe, illuminant_curve)
+    balance = compute_white_balance_gains_fn(active_trans, current_qe, illuminant_curve)
+    wb = balance.balance_divisors if balance.available else {"R": 1.0, "G": 1.0, "B": 1.0}
 
     # Create figure with layout
     setup_matplotlib_style()
@@ -543,10 +552,10 @@ def generate_report_png(
 
     # Build report sections
     _add_filter_swatches_section(fig.add_subplot(gs[0]), selected_filters, df, display_to_index)
-    _add_light_loss_section(fig.add_subplot(gs[1]), label, stops, avg_trans)
+    _add_light_loss_section(fig.add_subplot(gs[1]), label, effective_result)
     _add_transmission_plot_section(fig.add_subplot(gs[2]), selected_indices, df, filter_matrix, 
                                   masks, add_curve_fn, interp_grid, active_trans)
-    _add_white_balance_section(fig.add_subplot(gs[3]), wb)
+    _add_white_balance_section(fig.add_subplot(gs[3]), balance)
     _add_sensor_response_section(fig.add_subplot(gs[4]), current_qe, wb, active_trans, 
                                interp_grid, camera_name, illuminant_name)
 

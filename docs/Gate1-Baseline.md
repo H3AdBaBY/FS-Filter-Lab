@@ -14,11 +14,16 @@ virtual environment:
 bash scripts/run_gate1_baseline.sh
 ```
 
-The runner requires Python 3.10 or newer, installs `requirements-test.txt`, runs
+The runner now requires the approved Python 3.12 reference, installs
+`requirements-test.txt`, runs
 all tests, and removes its temporary environment. The focused test requirements
 contain only pytest and the NumPy/Pandas dependencies of the scientific and TSV
 loading modules; the UI stack is not started. Set `PYTHON_BIN` when the desired
 interpreter is not named `python3`.
+
+> Historical note: this document freezes pre-Gate-2 behavior. The owner approved
+> the replacement policies in `Gate2-Decision-Proposal.md` on 2026-08-03. The
+> runner now requires Python 3.12 and resolves the approved exact constraints.
 
 To print the dataset audit independently, with an optional full per-file JSON
 artifact:

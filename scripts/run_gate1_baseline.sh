@@ -4,7 +4,7 @@ set -eu
 REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 PYTHON_BIN=${PYTHON_BIN:-python3}
 
-"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else "Gate 1 requires Python 3.10 or newer")'
+"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else "The baseline requires the approved Python 3.12 runtime")'
 
 TEMP_ROOT=${TMPDIR:-/tmp}
 TEMP_ROOT=${TEMP_ROOT%/}

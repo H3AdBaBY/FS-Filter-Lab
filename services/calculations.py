@@ -11,13 +11,36 @@ This module provides all mathematical computation functions for:
 """
 # Third-party imports
 import numpy as np
+from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Any
 
 # Local imports
-from models.constants import EPSILON, DEFAULT_WB_GAINS, VEGETATION_PREVIEW_FILES
+from models.constants import VEGETATION_PREVIEW_FILES
 from models.core import FilterCollection, TargetProfile, ChannelMixerSettings, ReflectorCollection
 from models import INTERP_GRID
 from services.channel_mixer import apply_channel_mixing_to_responses, apply_channel_mixing_to_colors
+
+
+@dataclass(frozen=True)
+class EffectiveTransmissionResult:
+    """Green-QE-weighted transmission with explicit domain coverage."""
+
+    effective_transmission: float
+    effective_stops: float
+    coverage: float
+    available: bool
+    reason: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class WhiteBalanceResult:
+    """Sensor-response neutralization relative to the green channel."""
+
+    balance_divisors: Dict[str, float]
+    balance_multipliers: Dict[str, float]
+    channel_responses: Dict[str, float]
+    available: bool
+    reason: Optional[str] = None
 
 
 # ============================================================================
@@ -67,7 +90,6 @@ def compute_filter_transmission(
     if len(filter_indices) > 1:
         transmissions = [filter_matrix[idx] for idx in filter_indices]
         combined = compute_combined_transmission(transmissions, combine=True)
-        combined = np.clip(combined, EPSILON, 1.0)
         return combined, "Combined", combined
     
     transmission = filter_matrix[filter_indices[0]]
@@ -158,7 +180,7 @@ def compute_effective_stops(
     transmission: np.ndarray, 
     sensor_qe: np.ndarray,
     illuminant: Optional[np.ndarray] = None
-) -> Tuple[float, float]:
+) -> EffectiveTransmissionResult:
     """
     Compute effective stops from transmission, sensor QE, and illuminant.
     
@@ -167,51 +189,51 @@ def compute_effective_stops(
         sensor_qe: Sensor quantum efficiency values (%)
         illuminant: Illuminant spectrum (optional, defaults to uniform)
     
-    Returns:
-        Tuple of (avg_transmission, effective_stops)
+    Returns the approved green-QE-weighted metric, coverage, and availability.
     """
     # Ensure inputs are numpy arrays
-    transmission = np.asarray(transmission)
-    sensor_qe = np.asarray(sensor_qe)
+    transmission = np.asarray(transmission, dtype=float)
+    sensor_qe = np.asarray(sensor_qe, dtype=float)
     
     # Default to uniform illuminant if not provided
     if illuminant is None:
         illuminant = np.ones_like(transmission)
     else:
-        illuminant = np.asarray(illuminant)
-    
-    # Find valid indices where none are NaN
-    valid = (~np.isnan(transmission) & ~np.isnan(sensor_qe) & ~np.isnan(illuminant))
-    
-    # If no valid data, return NaNs immediately
-    if not np.any(valid):
-        return np.nan, np.nan
-    
-    clipped_trans = np.clip(transmission[valid], EPSILON, 1.0)
-    clipped_qe = sensor_qe[valid]
-    clipped_illuminant = illuminant[valid]
-    
-    # Weight by actual photon flux (illuminant * QE)
-    photometric_weights = clipped_illuminant * clipped_qe
-    
-    # If all weights are zero, cannot compute weighted average
-    if np.all(photometric_weights == 0):
-        return np.nan, np.nan
-    
-    # Defensive: Check if arrays are empty before averaging
-    if clipped_trans.size == 0 or photometric_weights.size == 0:
-        return np.nan, np.nan
-    
-    # Weighted average transmission by photon flux
-    avg_trans = np.average(clipped_trans, weights=photometric_weights)
-    
-    # Prevent log2 of zero or negative (should be prevented by clipping but be safe)
-    if avg_trans <= 0:
-        return np.nan, np.nan
-    
-    effective_stops = -np.log2(avg_trans)
-    
-    return avg_trans, effective_stops
+        illuminant = np.asarray(illuminant, dtype=float)
+
+    unavailable = lambda reason: EffectiveTransmissionResult(
+        np.nan, np.nan, 0.0, False, reason
+    )
+    if transmission.shape != sensor_qe.shape or transmission.shape != illuminant.shape:
+        return unavailable("transmission, green QE, and illuminant shapes differ")
+
+    weight_domain = np.isfinite(sensor_qe) & np.isfinite(illuminant)
+    if np.any(sensor_qe[weight_domain] < 0) or np.any(illuminant[weight_domain] < 0):
+        return unavailable("green QE and illuminant weights must be non-negative")
+
+    weights = sensor_qe * illuminant
+    positive_weight = weight_domain & (weights > 0)
+    denominator = np.sum(weights[positive_weight])
+    if not np.isfinite(denominator) or denominator <= 0:
+        return unavailable("green QE and illuminant have no positive common weight")
+
+    finite_transmission = np.isfinite(transmission)
+    if np.any((transmission[finite_transmission] < 0) | (transmission[finite_transmission] > 1)):
+        return unavailable("transmission must use physical fractional values in [0, 1]")
+
+    valid = positive_weight & finite_transmission
+    covered_weight = np.sum(weights[valid])
+    coverage = float(covered_weight / denominator)
+    if covered_weight <= 0:
+        return unavailable("transmission has zero coverage of the positive weighting domain")
+
+    effective_transmission = float(
+        np.sum(transmission[valid] * weights[valid]) / covered_weight
+    )
+    stops = np.inf if effective_transmission == 0 else float(-np.log2(effective_transmission))
+    return EffectiveTransmissionResult(
+        effective_transmission, stops, coverage, True
+    )
 
 
 def calculate_transmission_deviation_metrics(
@@ -288,8 +310,8 @@ def compute_rgb_response(
     Args:
         transmission: Transmission values
         quantum_efficiency: Dictionary of quantum efficiency values by channel
-        white_balance_gains: Dictionary of white balance gains by channel
-        visible_channels: Dictionary of channel visibility flags
+        white_balance_gains: Balance divisors by channel
+        visible_channels: Presentation-only visibility state (not applied here)
         channel_mixer: Optional channel mixer settings for RGB manipulation
     
     Returns:
@@ -322,19 +344,16 @@ def compute_rgb_response(
             rgb_stack.append(responses[channel])
             continue
 
-        # Get white balance gain, with safety check
-        gain = max(white_balance_gains.get(channel, 1.0), EPSILON)
-        
-        # Calculate weighted response
-        weighted = np.nan_to_num(transmission * (qe_curve / 100)) / gain * 100
-        max_response = max(max_response, np.nanmax(weighted))
-        
-        # Apply channel visibility
-        if visible_channels.get(channel, True):
-            responses[channel] = weighted
+        divisor = white_balance_gains.get(channel, 1.0)
+        if not np.isfinite(divisor) or divisor <= 0:
+            weighted = np.full_like(transmission, np.nan, dtype=float)
         else:
-            responses[channel] = np.zeros_like(weighted)
-            
+            weighted = transmission * qe_curve / divisor
+        finite = weighted[np.isfinite(weighted)]
+        if finite.size:
+            max_response = max(max_response, float(np.max(finite)))
+
+        responses[channel] = weighted
         rgb_stack.append(responses[channel])
     
     # Apply channel mixing if enabled
@@ -343,26 +362,20 @@ def compute_rgb_response(
         # Update rgb_stack with mixed responses
         rgb_stack = [responses['R'], responses['G'], responses['B']]
 
-    # Create RGB matrix and normalize
+    # Scientific output remains linear and unfloored. Visibility and display
+    # normalization are applied only by visualization functions.
     rgb_matrix = np.stack(rgb_stack, axis=1)
-    max_val = np.nanmax(rgb_matrix)
-    
-    if max_val > 0:
-        rgb_matrix = rgb_matrix / max_val
-        
-    # Clip to valid range
-    rgb_matrix = np.clip(rgb_matrix, 1/255, 1.0)
 
     return responses, rgb_matrix, max_response
 
 
-def compute_white_balance_gains(
+def compute_white_balance(
     transmission: np.ndarray,
     quantum_efficiency: Dict[str, np.ndarray],
     illuminant: np.ndarray
-) -> Dict[str, float]:
+) -> WhiteBalanceResult:
     """
-    Compute white balance gains from transmission, QE, and illuminant.
+    Compute green-referenced sensor-response balance on one common domain.
     
     Args:
         transmission: Transmission values
@@ -370,38 +383,61 @@ def compute_white_balance_gains(
         illuminant: Illuminant curve
     
     Returns:
-        Dictionary of white balance gains by channel
+        Divisors, reciprocal multipliers, responses, and availability reason
     """
-    # Early exit for invalid data
+    channels = ("R", "G", "B")
     if not is_valid_transmission(transmission):
-        return DEFAULT_WB_GAINS.copy()
-        
-    # Calculate response per channel
-    rgb_resp = {}
-    for ch in ['R', 'G', 'B']:
-        qe_curve = quantum_efficiency.get(ch)
-        if qe_curve is None:
-            rgb_resp[ch] = np.nan
-            continue
-        
-        # Find valid data points
-        valid = ~np.isnan(transmission) & ~np.isnan(qe_curve) & ~np.isnan(illuminant)
-        if not valid.any():
-            rgb_resp[ch] = np.nan
-            continue
-        
-        # Calculate total response for this channel
-        rgb_resp[ch] = np.nansum(
-            transmission[valid] * (qe_curve[valid] / 100) * illuminant[valid]
-        )
+        return WhiteBalanceResult({}, {}, {}, False, "transmission is unavailable")
+    if any(channel not in quantum_efficiency for channel in channels):
+        return WhiteBalanceResult({}, {}, {}, False, "R, G, and B QE channels are required")
 
-    # Normalize gains using green as reference
-    g_response = rgb_resp.get('G', np.nan)
-    if not np.isnan(g_response) and g_response > EPSILON:
-        return {ch: rgb_resp[ch] / g_response for ch in ['R', 'G', 'B']}
-    
-    # Fall back to defaults if we can't normalize
-    return DEFAULT_WB_GAINS.copy()
+    transmission = np.asarray(transmission, dtype=float)
+    illuminant = np.asarray(illuminant, dtype=float)
+    qe_curves = {
+        channel: np.asarray(quantum_efficiency[channel], dtype=float)
+        for channel in channels
+    }
+    if any(curve.shape != transmission.shape for curve in qe_curves.values()) or illuminant.shape != transmission.shape:
+        return WhiteBalanceResult({}, {}, {}, False, "transmission, QE, and illuminant shapes differ")
+
+    common = np.isfinite(transmission) & np.isfinite(illuminant)
+    for curve in qe_curves.values():
+        common &= np.isfinite(curve)
+    if not np.any(common):
+        return WhiteBalanceResult({}, {}, {}, False, "common finite RGB support is empty")
+    if np.any(transmission[common] < 0) or np.any(illuminant[common] < 0):
+        return WhiteBalanceResult({}, {}, {}, False, "transmission and illuminant must be non-negative")
+    if any(np.any(curve[common] < 0) for curve in qe_curves.values()):
+        return WhiteBalanceResult({}, {}, {}, False, "QE values must be non-negative")
+
+    responses = {
+        channel: float(
+            np.sum(transmission[common] * (curve[common] / 100.0) * illuminant[common])
+        )
+        for channel, curve in qe_curves.items()
+    }
+    green = responses["G"]
+    if green <= 0:
+        return WhiteBalanceResult({}, {}, responses, False, "green response is zero")
+
+    divisors = {channel: response / green for channel, response in responses.items()}
+    multipliers = {
+        channel: (np.inf if divisor == 0 else 1.0 / divisor)
+        for channel, divisor in divisors.items()
+    }
+    return WhiteBalanceResult(divisors, multipliers, responses, True)
+
+
+def compute_white_balance_gains(
+    transmission: np.ndarray,
+    quantum_efficiency: Dict[str, np.ndarray],
+    illuminant: np.ndarray,
+) -> Dict[str, float]:
+    """Compatibility adapter returning divisors or an explicit invalid error."""
+    result = compute_white_balance(transmission, quantum_efficiency, illuminant)
+    if not result.available:
+        raise ValueError(f"sensor-response balance unavailable: {result.reason}")
+    return result.balance_divisors
 
 
 # ============================================================================
@@ -432,8 +468,9 @@ def compute_reflector_color(
     if not is_valid_transmission(transmission) or reflector is None:
         return np.zeros(3)
         
-    # Compute white balance gains
-    wb = compute_white_balance_gains(transmission, quantum_efficiency, illuminant)
+    balance = compute_white_balance(transmission, quantum_efficiency, illuminant)
+    if not balance.available:
+        return np.full(3, np.nan)
 
     # Process each channel
     rgb_resp = {}
@@ -459,14 +496,10 @@ def compute_reflector_color(
             illuminant[valid]
         )
 
-    # Apply white balance with safety against division by zero
+    # Apply the approved multiplicative correction exactly once.
     rgb_values = np.zeros(3)
     for i, ch in enumerate(['R', 'G', 'B']):
-        wb_gain = wb.get(ch, 1.0)
-        if wb_gain > EPSILON:
-            rgb_values[i] = rgb_resp.get(ch, 0.0) / wb_gain
-        else:
-            rgb_values[i] = rgb_resp.get(ch, 0.0)
+        rgb_values[i] = rgb_resp.get(ch, 0.0) * balance.balance_multipliers[ch]
     
     # Apply channel mixing if enabled
     if channel_mixer is not None and channel_mixer.enabled:
@@ -668,7 +701,7 @@ def format_transmission_metrics(
     """
     return {
         "label": label,
-        "effective_stops": f"{effective_stops:.2f}",
+        "effective_stops": "∞" if np.isposinf(effective_stops) else f"{effective_stops:.2f}",
         "avg_transmission_pct": f"{avg_trans * 100:.1f}%"
     }
 
@@ -713,8 +746,8 @@ def format_white_balance_data(
     Returns:
         Dictionary with formatted white balance data
     """
-    # Calculate relative channel intensities (inverted gains)
-    intensities = {
+    # Convert stored divisors to the multipliers actually applied.
+    multipliers = {
         k: (1.0 / v if v != 0 else 0.0)
         for k, v in white_balance_gains.items()
     }
@@ -725,8 +758,8 @@ def format_white_balance_data(
     return {
         "has_filters": has_filters,
         "intensities": {
-            "R": f"{intensities['R']:.3f}",
-            "G": f"{intensities['G']:.3f}",
-            "B": f"{intensities['B']:.3f}"
+            "R": f"{multipliers['R']:.3f}",
+            "G": f"{multipliers['G']:.3f}",
+            "B": f"{multipliers['B']:.3f}"
         }
     }

@@ -61,7 +61,10 @@ from services.calculations import (
 from services.calculations import (
     normalize_pixels,
     compute_rgb_response,
+    compute_white_balance,
     compute_white_balance_gains,
+    EffectiveTransmissionResult,
+    WhiteBalanceResult,
     compute_reflector_color,
     compute_reflector_preview_colors,
     find_vegetation_preview_reflectors,

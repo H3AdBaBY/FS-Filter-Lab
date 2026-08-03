@@ -26,9 +26,10 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import os
-from scipy.interpolate import interp1d
 from typing import Tuple, Dict, Any
 import logging
+
+from services.spectral_policy import infer_legacy_unit, prepare_spectrum
 
 # Configure logging for debugging import issues
 logger = logging.getLogger(__name__)
@@ -178,20 +179,23 @@ def get_wavelength_range(wavelengths, extrap_lower=False, extrap_upper=False):
     return min_wl, max_wl
 
 
-def interpolate_spectrum(wavelengths, values, target_wavelengths, extrap_lower=False, extrap_upper=False):
-    """Interpolate spectral data to a target wavelength range."""
-    interpolator = interp1d(wavelengths, values, kind='linear', bounds_error=False, fill_value=np.nan)
-    interpolated = interpolator(target_wavelengths)
-    
-    # Handle extrapolation
-    if extrap_lower:
-        below_mask = target_wavelengths < wavelengths.min()
-        interpolated[below_mask] = values[0]
-    if extrap_upper:
-        above_mask = target_wavelengths > wavelengths.max()
-        interpolated[above_mask] = values[-1]
-    
-    return np.clip(np.round(interpolated, 3), 0.0, None)
+def interpolate_spectrum(
+    wavelengths,
+    values,
+    target_wavelengths,
+    extrap_lower=False,
+    extrap_upper=False,
+    quantity="transmission",
+):
+    """Use the same validated interpolation policy as production loaders."""
+    prepared = prepare_spectrum(
+        wavelengths,
+        values,
+        quantity,
+        extrapolation="constant" if extrap_lower or extrap_upper else "none",
+        target_grid=target_wavelengths,
+    )
+    return prepared.physical_values
 
 
 def sanitize_filename(name):
@@ -270,11 +274,6 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         if trans_min < 0:
             return False, f"Transmission values cannot be negative (min: {trans_min:.2f})."
 
-        # Sort by wavelength
-        sort_idx = np.argsort(wavelengths)
-        wavelengths = wavelengths[sort_idx]
-        transmissions = transmissions[sort_idx]
-
         # Determine wavelength range
         min_wl, max_wl = get_wavelength_range(wavelengths, extrap_lower, extrap_upper)
         new_wavelengths = np.arange(min_wl, max_wl + 1, 1)
@@ -311,7 +310,11 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
 
-        return True, f"Filter data saved successfully to {out_path}"
+        inferred_unit = infer_legacy_unit(transmissions, "transmission")
+        return True, (
+            f"Filter data saved successfully to {out_path}. "
+            f"Legacy unit inference: {inferred_unit}."
+        )
         
     except ValueError as e:
         # These are validation errors we want to show to the user
@@ -381,10 +384,16 @@ def import_illuminant_from_csv(uploaded_file, description):
 
         # Target wavelength range: 300–1100 nm
         full_range = np.arange(300, 1101, 1)
-        intensity_interp = np.interp(full_range, wavelengths, intensity, left=0, right=0)
+        intensity_interp = prepare_spectrum(
+            wavelengths,
+            intensity,
+            "illuminant",
+            unit="relative",
+            target_grid=full_range,
+        ).physical_values
 
         # Normalize to 0–100 scale
-        max_val = np.max(intensity_interp)
+        max_val = np.nanmax(intensity_interp)
         if max_val > 0:
             intensity_rel = np.round((intensity_interp / max_val) * 100, 3)
         else:
@@ -490,9 +499,17 @@ def import_qe_from_csv(uploaded_file, brand, model):
 
         # Interpolate to standard grid (300-1100nm)
         target_wl = np.arange(300, 1101, 1)
-        r_interp = np.interp(target_wl, wavelengths, r_qe)
-        g_interp = np.interp(target_wl, wavelengths, g_qe)
-        b_interp = np.interp(target_wl, wavelengths, b_qe)
+        combined_qe = np.concatenate([r_qe, g_qe, b_qe])
+        qe_unit = infer_legacy_unit(combined_qe, "qe")
+        r_interp = prepare_spectrum(
+            wavelengths, r_qe, "qe", unit=qe_unit, target_grid=target_wl
+        ).physical_values
+        g_interp = prepare_spectrum(
+            wavelengths, g_qe, "qe", unit=qe_unit, target_grid=target_wl
+        ).physical_values
+        b_interp = prepare_spectrum(
+            wavelengths, b_qe, "qe", unit=qe_unit, target_grid=target_wl
+        ).physical_values
 
         # Create output DataFrame
         output_df = pd.DataFrame({
@@ -516,7 +533,10 @@ def import_qe_from_csv(uploaded_file, brand, model):
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
             
-        return True, f"QE data saved successfully to {out_path}"
+        return True, (
+            f"QE data saved successfully to {out_path}. "
+            f"Legacy unit inference: {qe_unit}."
+        )
         
     except ValueError as e:
         # These are validation errors we want to show to the user
@@ -579,11 +599,6 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         if max_wl - min_wl < 50:
             return False, f"Wavelength range too narrow ({min_wl:.1f}-{max_wl:.1f} nm). Need at least 50nm range."
 
-        # Sort by wavelength
-        sort_idx = np.argsort(wavelengths)
-        wavelengths = wavelengths[sort_idx] 
-        values = values[sort_idx]
-
         # Determine wavelength range
         min_wl, max_wl = get_wavelength_range(wavelengths, extrap_lower, extrap_upper)
         new_wavelengths = np.arange(min_wl, max_wl + 1, 1)
@@ -591,15 +606,8 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         # Interpolate
         interpolated = interpolate_spectrum(
             wavelengths, values, new_wavelengths,
-            extrap_lower, extrap_upper
+            extrap_lower, extrap_upper, quantity="reflectance"
         )
-
-        # Normalize reflectance units: if values look like percents (>1.5), convert to fraction [0..1]
-        if np.nanmax(interpolated) > 1.5:
-            interpolated = interpolated / 100.0
-
-        # Round to 3 decimal places to avoid floating point precision issues
-        interpolated = np.round(interpolated, 3)
 
         # Create DataFrame
         data_type = meta.get("data_type", "Reflectance")
@@ -634,7 +642,11 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
             
-        return True, f"{data_type} data saved successfully to {out_path}"
+        inferred_unit = infer_legacy_unit(values, "reflectance")
+        return True, (
+            f"{data_type} data saved successfully to {out_path}. "
+            f"Legacy unit inference: {inferred_unit}."
+        )
         
     except ValueError as e:
         # These are validation errors we want to show to the user

@@ -3,6 +3,8 @@ Data loading services for FS FilterLab.
 """
 # Standard library imports
 import pickle
+import sys
+import warnings
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional, TypeVar, Callable
 
@@ -15,7 +17,8 @@ from models import (
     Filter, FilterCollection, TargetProfile,
     ReflectorSpectrum, ReflectorCollection
 )
-from models.constants import CACHE_DIR, DEFAULT_HEX_COLOR, DEFAULT_ILLUMINANT, INTERP_GRID
+from models.constants import CACHE_DIR, DEFAULT_HEX_COLOR, INTERP_GRID
+from services.spectral_policy import PreparedSpectrum, prepare_spectrum
 
 
 def interpolate_to_standard_grid(wavelengths: np.ndarray, values: np.ndarray) -> np.ndarray:
@@ -29,13 +32,38 @@ def interpolate_to_standard_grid(wavelengths: np.ndarray, values: np.ndarray) ->
     Returns:
         Interpolated values on the standard INTERP_GRID
     """
-    return np.interp(INTERP_GRID, wavelengths, values, left=np.nan, right=np.nan)
+    return prepare_spectrum(wavelengths, values, "illuminant", unit="relative").raw_values
 
 # Ensure cache directory exists
 Path(CACHE_DIR).mkdir(exist_ok=True)
 
 # Generic type for cached data
 T = TypeVar('T')
+CACHE_SCHEMA_VERSION = 2
+NORMALIZATION_POLICY_VERSION = "g2-2026-08-03"
+
+
+def _cache_metadata(data_dir: Path) -> dict:
+    source_state = [
+        {
+            "path": path.relative_to(data_dir).as_posix(),
+            "size": path.stat().st_size,
+            "mtime_ns": path.stat().st_mtime_ns,
+        }
+        for path in sorted(data_dir.glob("**/*.tsv"), key=lambda item: item.as_posix())
+        if path.is_file()
+    ]
+    return {
+        "schema_version": CACHE_SCHEMA_VERSION,
+        "normalization_policy_version": NORMALIZATION_POLICY_VERSION,
+        "format_versions": {
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+        },
+        "source_root": data_dir.resolve().as_posix(),
+        "source_state": source_state,
+    }
 
 def parse_tsv_file(file_path: str | Path) -> pd.DataFrame:
     """
@@ -68,45 +96,35 @@ def cached_loader(cache_key: str, data_folder: str | Path,
     """
     data_dir = Path(data_folder)
     cache_file = Path(CACHE_DIR) / f"{cache_key}.pkl"
-    cache_time_file = Path(CACHE_DIR) / f"{cache_key}_time.pkl"
-    
-    # Check if cache exists and is newer than source files
-    cache_valid = False
-    if cache_file.exists() and cache_time_file.exists():
+    metadata = _cache_metadata(data_dir)
+
+    if cache_file.exists():
         try:
-            # Load the last modification time we saved
-            with open(cache_time_file, 'rb') as f:
-                cached_timestamp = pickle.load(f)
-            
-            # Find the newest file in the data folder
-            newest_time = 0
-            for filepath in data_dir.glob("**/*.tsv"):
-                if filepath.is_file():
-                    newest_time = max(newest_time, filepath.stat().st_mtime)
-            
-            # If our cached time is newer than any data file, cache is valid
-            cache_valid = cached_timestamp > newest_time
-            
-            if cache_valid:
-                with open(cache_file, 'rb') as f:
-                    return pickle.load(f)
-        except Exception:
-            pass  # Silent failure for cache operations
+            with open(cache_file, 'rb') as f:
+                envelope = pickle.load(f)
+            if isinstance(envelope, dict) and envelope.get("metadata") == metadata:
+                return envelope["payload"]
+        except Exception as error:
+            warnings.warn(
+                f"cache_read_failed:{cache_file.as_posix()}:{type(error).__name__}: {error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     
     # Cache miss or invalid - load fresh data
     data = load_function()
     
     # Save to cache
     try:
+        Path(CACHE_DIR).mkdir(exist_ok=True, parents=True)
         with open(cache_file, 'wb') as f:
-            pickle.dump(data, f)
-            
-        # Save current timestamp
-        import time
-        with open(cache_time_file, 'wb') as f:
-            pickle.dump(time.time(), f)
-    except Exception:
-        pass  # Silent failure for cache operations
+            pickle.dump({"metadata": metadata, "payload": data}, f)
+    except Exception as error:
+        warnings.warn(
+            f"cache_write_failed:{cache_file.as_posix()}:{type(error).__name__}: {error}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         
     return data
 
@@ -175,23 +193,26 @@ def _process_filter_file(path: Path) -> Optional[Tuple[dict, np.ndarray, np.ndar
     hex_color = str(hex_color_raw).strip() if pd.notnull(hex_color_raw) and str(hex_color_raw).strip().startswith("#") else DEFAULT_HEX_COLOR
     
     # Extract wavelength and transmittance values
-    wavelengths = df["Wavelength"].astype(float).values
-    transmittance = df["Transmittance"].astype(float).values
-    
-    # Normalize if needed
-    if transmittance.max() > 1.5:
-        transmittance /= 100.0
-    
-    # Interpolate to standard grid
-    interp_vals = interpolate_to_standard_grid(wavelengths, transmittance)
-    extrap_mask = (INTERP_GRID > 700) if is_lee else np.zeros_like(INTERP_GRID, dtype=bool)
+    wavelengths = df["Wavelength"].to_numpy(dtype=float, copy=True)
+    transmittance = df["Transmittance"].to_numpy(dtype=float, copy=True)
+    prepared = prepare_spectrum(
+        wavelengths,
+        transmittance,
+        "transmission",
+        source=path.as_posix(),
+        extrapolation="constant" if is_lee else "none",
+    )
+    interp_vals = prepared.physical_values
+    extrap_mask = prepared.extrapolated_mask
     
     metadata = {
         'Filter Number': fn,
         'Filter Name': name,
         'Manufacturer': manufacturer,
         'Hex Color': hex_color,
-        'is_lee': is_lee
+        'is_lee': is_lee,
+        'Unit Interpretation': prepared.unit,
+        'Diagnostics': prepared.diagnostics,
     }
     
     filter_obj = Filter(
@@ -200,7 +221,10 @@ def _process_filter_file(path: Path) -> Optional[Tuple[dict, np.ndarray, np.ndar
         manufacturer=manufacturer,
         hex_color=hex_color,
         transmission=interp_vals,
-        extrapolated_mask=extrap_mask
+        extrapolated_mask=extrap_mask,
+        raw_transmission=prepared.raw_values,
+        unit_interpretation=prepared.unit,
+        diagnostics=list(prepared.diagnostics),
     )
     
     return metadata, interp_vals, extrap_mask, filter_obj
@@ -275,7 +299,7 @@ def load_filter_collection() -> FilterCollection:
         return _load_filter_collection_from_files()
 
 
-def _process_qe_file(path: Path) -> Optional[Tuple[str, Dict[str, np.ndarray], bool]]:
+def _process_qe_file(path: Path) -> Optional[Tuple[str, Dict[str, np.ndarray], bool, dict]]:
     """
     Process a quantum efficiency file.
     
@@ -298,7 +322,14 @@ def _process_qe_file(path: Path) -> Optional[Tuple[str, Dict[str, np.ndarray], b
     
     # Process channels
     channel_data = {}
-    wavelength = df['Wavelength'].astype(float).values
+    diagnostics = []
+    wavelength = df['Wavelength'].to_numpy(dtype=float, copy=True)
+
+    combined_values = np.concatenate([
+        df[channel].to_numpy(dtype=float, copy=True)
+        for channel in ['R', 'G', 'B'] if channel in df.columns
+    ])
+    qe_unit = "fraction" if np.nanmax(combined_values) <= 1.0 else "percent"
     
     for channel in ['R', 'G', 'B']:
         if channel not in df.columns:
@@ -308,20 +339,20 @@ def _process_qe_file(path: Path) -> Optional[Tuple[str, Dict[str, np.ndarray], b
         if not valid_mask.any():
             continue
             
-        channel_values = df[channel].values
-        interp = np.interp(
-            INTERP_GRID, 
-            wavelength, 
-            channel_values,
-            left=np.nan, 
-            right=np.nan
+        channel_values = df[channel].to_numpy(dtype=float, copy=True)
+        prepared = prepare_spectrum(
+            wavelength, channel_values, "qe", unit=qe_unit, source=path.as_posix()
         )
-        channel_data[channel[0]] = interp
+        channel_data[channel[0]] = prepared.physical_values
+        diagnostics.extend(prepared.diagnostics)
     
     # Check if this is the default QE file
     is_default = (path.name == 'Default_QE.tsv')
     
-    return key, channel_data, is_default
+    return key, channel_data, is_default, {
+        "unit_interpretation": qe_unit,
+        "diagnostics": tuple(diagnostics),
+    }
 
 
 def _load_quantum_efficiencies_from_files() -> Tuple[List[str], Dict[str, Dict[str, np.ndarray]], Optional[str]]:
@@ -341,7 +372,7 @@ def _load_quantum_efficiencies_from_files() -> Tuple[List[str], Dict[str, Dict[s
     for path in files:
         result = safely_load_file(path, _process_qe_file)
         if result:
-            key, channel_data, is_default = result
+            key, channel_data, is_default, _diagnostic_metadata = result
             qe_dict[key] = channel_data
             if is_default and default_key is None:
                 default_key = key
@@ -358,7 +389,7 @@ def load_quantum_efficiencies() -> Tuple[List[str], Dict[str, Dict[str, np.ndarr
     )
 
 
-def _process_illuminant_file(path: Path) -> Optional[Tuple[str, np.ndarray, Optional[str]]]:
+def _process_illuminant_file(path: Path) -> Optional[Tuple[str, np.ndarray, Optional[str], PreparedSpectrum]]:
     """
     Process an illuminant file.
     
@@ -374,11 +405,14 @@ def _process_illuminant_file(path: Path) -> Optional[Tuple[str, np.ndarray, Opti
         return None
     
     # Extract wavelength and power data from the first two columns
-    wl = df.iloc[:, 0].astype(float).values
-    power = df.iloc[:, 1].astype(float).values
+    wl = df.iloc[:, 0].to_numpy(dtype=float, copy=True)
+    power = df.iloc[:, 1].to_numpy(dtype=float, copy=True)
     
     # Interpolate to standard grid
-    interp = interpolate_to_standard_grid(wl, power)
+    prepared = prepare_spectrum(
+        wl, power, "illuminant", unit="relative", source=path.as_posix()
+    )
+    interp = prepared.physical_values
     name = path.stem
     
     # Extract description if available
@@ -386,7 +420,7 @@ def _process_illuminant_file(path: Path) -> Optional[Tuple[str, np.ndarray, Opti
     if 'Description' in df.columns and not df['Description'].dropna().empty:
         description = df['Description'].dropna().iloc[0]
     
-    return name, interp, description
+    return name, interp, description, prepared
 
 
 def _load_illuminant_collection_from_files() -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
@@ -404,7 +438,7 @@ def _load_illuminant_collection_from_files() -> Tuple[Dict[str, np.ndarray], Dic
     for path in folder.glob('*.tsv'):
         result = safely_load_file(path, _process_illuminant_file)
         if result:
-            name, interp, description = result
+            name, interp, description, _prepared = result
             illum[name] = interp
             if description:
                 meta[name] = description
@@ -421,7 +455,7 @@ def load_illuminant_collection() -> Tuple[Dict[str, np.ndarray], Dict[str, str]]
     )
 
 
-def _process_reflector_file(path: Path) -> Optional[Tuple[str, np.ndarray]]:
+def _process_reflector_file(path: Path) -> Optional[Tuple[str, PreparedSpectrum]]:
     """
     Process a reflector file.
     
@@ -448,29 +482,18 @@ def _process_reflector_file(path: Path) -> Optional[Tuple[str, np.ndarray]]:
         name = path.stem
     
     # Process wavelength and reflectance data
-    wl = df["Wavelength"].astype(float).values
-    refl = df["Reflectance"].astype(float).values
+    wl = df["Wavelength"].to_numpy(dtype=float, copy=True)
+    refl = df["Reflectance"].to_numpy(dtype=float, copy=True)
     
     # Check for sufficient valid data points
     valid_mask = ~np.isnan(refl)
     if np.sum(valid_mask) < 2:
         return None
         
-    wl = wl[valid_mask]
-    refl = refl[valid_mask]
-    
-    # Interpolate to standard grid
-    interp_vals = interpolate_to_standard_grid(wl, refl)
-    
-    # Normalize reflectance units: if values look like percents (>1.5), convert to fraction [0..1]
-    # This handles existing files that may have been imported before normalization was added
-    if np.nanmax(interp_vals) > 1.5:
-        interp_vals = interp_vals / 100.0
-    
-    # Round to 3 decimal places to avoid floating point precision issues
-    interp_vals = np.round(interp_vals, 3)
-    
-    return name, interp_vals
+    prepared = prepare_spectrum(
+        wl, refl, "reflectance", source=path.as_posix()
+    )
+    return name, prepared
 
 
 def _load_reflector_collection_from_files() -> ReflectorCollection:
@@ -490,9 +513,15 @@ def _load_reflector_collection_from_files() -> ReflectorCollection:
     for path in files:
         result = safely_load_file(path, _process_reflector_file)
         if result:
-            name, interp_vals = result
-            reflectors.append(ReflectorSpectrum(name=name, values=interp_vals))
-            matrix.append(interp_vals)
+            name, prepared = result
+            reflectors.append(ReflectorSpectrum(
+                name=name,
+                values=prepared.physical_values,
+                raw_values=prepared.raw_values,
+                unit_interpretation=prepared.unit,
+                diagnostics=list(prepared.diagnostics),
+            ))
+            matrix.append(prepared.physical_values)
 
     if not matrix:
         return create_empty_reflector_collection()

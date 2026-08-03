@@ -50,6 +50,9 @@ class Filter:
     hex_color: str
     transmission: np.ndarray
     extrapolated_mask: np.ndarray = None
+    raw_transmission: Optional[np.ndarray] = None
+    unit_interpretation: Optional[str] = None
+    diagnostics: List[Any] = field(default_factory=list)
     
     def __str__(self) -> str:
         """Return a formatted display name for the filter."""
@@ -191,11 +194,14 @@ class ChannelMixerSettings:
         Returns:
             3x3 NumPy array where each row represents output channel weights
         """
-        return np.array([
+        matrix = np.array([
             [self.red_r, self.red_g, self.red_b],      # Red output weights
             [self.green_r, self.green_g, self.green_b], # Green output weights  
             [self.blue_r, self.blue_g, self.blue_b]    # Blue output weights
-        ])
+        ], dtype=float)
+        if not np.all(np.isfinite(matrix)):
+            raise ValueError("channel mixer coefficients must be finite")
+        return matrix
     
     def from_dict(self, settings_dict: Dict[str, Any]) -> None:
         """Update settings from dictionary (for preset loading)."""
@@ -228,6 +234,9 @@ class ReflectorSpectrum:
     """
     name: str
     values: np.ndarray  # Reflectance values across the spectrum
+    raw_values: Optional[np.ndarray] = None
+    unit_interpretation: Optional[str] = None
+    diagnostics: List[Any] = field(default_factory=list)
 
 
 @dataclass

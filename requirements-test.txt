@@ -1,7 +1,7 @@
-# Gate 1 exercises the numerical and TSV-loading modules without the UI stack.
+# The baseline suite exercises numerical and TSV-loading modules without the UI stack.
+-c constraints-py312.txt
+
 numpy
 
-# Pandas 3 makes the production loader's in-place percentage normalization fail
-# on read-only data, so the compatibility baseline remains on pre-3 behavior.
-pandas<3
-pytest>=8
+pandas
+pytest

@@ -51,7 +51,7 @@ QE_COLORS = {
     'B': 'blue'      # Blue channel display color
 }
 
-# Default white balance multiplier values (unity gain)
+# Default sensor-response balance divisors (unity correction)
 DEFAULT_WB_GAINS = {
     'R': 1.0,        # Red channel multiplier
     'G': 1.0,        # Green channel multiplier (reference)
@@ -121,8 +121,8 @@ UI_SECTIONS = {
     'filter_plotter': "Filter Plotter",
     'extras': "Extras",
     'settings': "Settings",
-    'vegetation_preview': "Vegetation Color Preview",
-    'surface_preview': "Surface Preview",
+    'vegetation_preview': "Vegetation Sensor-Response Preview",
+    'surface_preview': "Surface Sensor-Response Preview",
     'show_advanced_search': "Show Advanced Search",
     'show_channel_mixer': "Show Channel Mixer",
     'sensor_response_channels': "Sensor-Weighted Response Channels",
@@ -139,7 +139,7 @@ UI_LABELS = {
     'surface_reflectance': "Surface Reflectance Spectrum",
     'set_filter_counts': "Set Filter Stack Counts",
     'stop_view_toggle': "Show stop-view (logarithmic)",
-    'apply_white_balance': "Apply White Balance to Response"
+    'apply_white_balance': "Apply Sensor-Response Balance"
 }
 
 # User feedback messages
@@ -157,7 +157,7 @@ UI_WARNING_MESSAGES = {
     'invalid_hex_colors': "⚠ Found {count} filters with invalid hex color codes:",
     'incomplete_reflector_data': "Some reflector data appears incomplete. Check data files.",
     'vegetation_preview_required': (
-        "⚠️ Vegetation Color Preview requires these exact reflector names:\n"
+        "⚠️ Vegetation sensor-response preview requires these exact reflector names:\n"
         "• Leaf 1\n"
         "• Leaf 2\n" 
         "• Leaf 3\n"
@@ -309,8 +309,8 @@ class ComputationFunctions:
     """Container for computation functions used in report generation."""
     compute_selected_indices_fn: Callable[[List[str]], List[int]]
     compute_filter_transmission_fn: Callable[[List[int]], Tuple[np.ndarray, str, np.ndarray]]
-    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Tuple[float, float]]
-    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Dict[str, float]]
+    compute_effective_stops_fn: Callable[[np.ndarray, np.ndarray, Optional[np.ndarray]], Any]
+    compute_white_balance_gains_fn: Callable[[np.ndarray, Dict[str, np.ndarray], np.ndarray], Any]
     add_curve_fn: Callable
     sanitize_fn: Callable[[str], str]
 

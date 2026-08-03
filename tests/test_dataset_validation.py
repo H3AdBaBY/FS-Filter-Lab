@@ -45,6 +45,15 @@ def test_every_bundled_tsv_is_classified_and_counts_reconcile() -> None:
     }
     assert len(report["files"]) == report["summary"]["discovered"]
     assert all(entry["reason"] for entry in report["files"])
+    assert report["diagnostics"] == {
+        "nonfinite_values_preserved": 63,
+        "physical_bounds_clipped": 34,
+        "unit_interpretation": 1572,
+    }
+    assert all(
+        any(item["code"] == "unit_interpretation" for item in entry["diagnostics"])
+        for entry in report["files"]
+    )
 
 
 def test_validator_reports_each_nonaccepted_file_with_a_reason(tmp_path) -> None:

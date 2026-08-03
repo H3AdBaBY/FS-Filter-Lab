@@ -48,7 +48,7 @@ from services.calculations import (
     compute_selected_filter_indices,
     compute_effective_stops,
     compute_rgb_response,
-    compute_white_balance_gains
+    compute_white_balance
 )
 from services.visualization import (
     generate_report_png, add_filter_curve_to_matplotlib, generate_report_png_v2,
@@ -238,12 +238,14 @@ def generate_application_report(
                  else np.ones_like(INTERP_GRID))
     
     # Compute effective stops
-    effective_stops_fn = lambda t, qe: compute_effective_stops(t, qe, illuminant) if qe is not None else (0.0, 0.0)
+    effective_stops_fn = lambda t, qe, illum=None: compute_effective_stops(
+        t, qe if qe is not None else np.zeros_like(t), illuminant
+    )
     
     # Compute white balance
     white_balance_fn = lambda t, qe, illum: (
-        compute_white_balance_gains(t, qe, illum) if qe is not None 
-        else {"R": 1.0, "G": 1.0, "B": 1.0}
+        compute_white_balance(t, qe, illum) if qe is not None
+        else compute_white_balance(t, {}, illum)
     )
     
     # Generate report using new data class structure (simplified version)

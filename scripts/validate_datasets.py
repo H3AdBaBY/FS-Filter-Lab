@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,6 +31,27 @@ def _dataset_identity(dataset_type: str, result: Any) -> str:
     if dataset_type == "filter":
         return str(result[3])
     return str(result[0])
+
+
+def _dataset_diagnostics(dataset_type: str, result: Any, display_path: str) -> list[dict[str, Any]]:
+    """Extract structured production diagnostics without leaking absolute paths."""
+    if dataset_type == "filter":
+        diagnostics = result[3].diagnostics
+    elif dataset_type == "qe":
+        diagnostics = result[3]["diagnostics"]
+    elif dataset_type == "illuminant":
+        diagnostics = result[3].diagnostics
+    elif dataset_type == "reflector":
+        diagnostics = result[1].diagnostics
+    else:
+        diagnostics = ()
+
+    serialized = []
+    for diagnostic in diagnostics:
+        item = asdict(diagnostic)
+        item["source"] = display_path
+        serialized.append(item)
+    return serialized
 
 
 def _skip_reason(dataset_type: str, path: Path) -> str:
@@ -110,12 +132,14 @@ def validate_datasets(data_root: Path) -> dict[str, Any]:
 
             first_identity[identity_key] = display_path
             first_digest[digest] = display_path
+            diagnostics = _dataset_diagnostics(dataset_type, result, display_path)
             entries.append(
                 {
                     "path": display_path,
                     "dataset_type": dataset_type,
                     "status": "accepted",
                     "reason": "accepted by the production processor",
+                    "diagnostics": diagnostics,
                 }
             )
         except Exception as error:  # Match the production loader's broad failure boundary.
@@ -155,11 +179,18 @@ def validate_datasets(data_root: Path) -> dict[str, Any]:
         summary[name] for name in ("accepted", "skipped", "duplicate", "invalid")
     )
 
+    diagnostic_counts = Counter(
+        diagnostic["code"]
+        for entry in entries
+        for diagnostic in entry.get("diagnostics", [])
+    )
+
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "data_root": data_root.as_posix(),
         "summary": summary,
         "by_type": by_type,
+        "diagnostics": dict(sorted(diagnostic_counts.items())),
         "files": entries,
     }
 
@@ -175,6 +206,29 @@ def _print_report(report: dict[str, Any]) -> None:
             f"  {dataset_type}: "
             + ", ".join(f"{name}={counts[name]}" for name in counts)
         )
+
+    diagnostic_files = [
+        entry
+        for entry in report["files"]
+        if any(
+            diagnostic["code"] != "unit_interpretation"
+            for diagnostic in entry.get("diagnostics", [])
+        )
+    ]
+    print(
+        "Diagnostics: "
+        + (", ".join(f"{name}={count}" for name, count in report["diagnostics"].items()) or "none")
+    )
+    if diagnostic_files:
+        print("Diagnostic files:")
+        for entry in diagnostic_files:
+            for diagnostic in entry["diagnostics"]:
+                if diagnostic["code"] == "unit_interpretation":
+                    continue
+                print(
+                    f"  [{diagnostic['severity']}] {entry['path']}: "
+                    f"{diagnostic['code']}: {diagnostic['message']}"
+                )
 
     affected = [entry for entry in report["files"] if entry["status"] != "accepted"]
     if not affected:

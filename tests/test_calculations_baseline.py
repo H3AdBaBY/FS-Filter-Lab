@@ -1,6 +1,6 @@
 import numpy as np
 
-from models.constants import EPSILON, INTERP_GRID
+from models.constants import INTERP_GRID
 from models.core import ChannelMixerSettings, Filter, FilterCollection
 from services.calculations import (
     compute_active_transmission,
@@ -11,6 +11,7 @@ from services.calculations import (
     compute_rgb_response,
     compute_selected_filter_indices,
     compute_single_reflector_color,
+    compute_white_balance,
     compute_white_balance_gains,
 )
 from services.channel_mixer import (
@@ -92,23 +93,27 @@ def test_effective_stops_use_illuminant_times_qe_weights() -> None:
     qe = np.array([100.0, 100.0, 100.0])
     illuminant = np.array([1.0, 3.0, 1.0])
 
-    average, stops = compute_effective_stops(transmission, qe, illuminant)
+    result = compute_effective_stops(transmission, qe, illuminant)
 
-    assert average == 0.3125
-    assert stops == -np.log2(0.3125)
-
-
-def test_effective_stops_clip_zero_and_reject_zero_weights() -> None:
-    average, stops = compute_effective_stops(np.zeros(3), np.ones(3))
-    assert average == EPSILON
-    assert stops == -np.log2(EPSILON)
-
-    average, stops = compute_effective_stops(np.ones(3), np.zeros(3))
-    assert np.isnan(average)
-    assert np.isnan(stops)
+    assert result.available
+    assert result.effective_transmission == 0.3125
+    assert result.effective_stops == -np.log2(0.3125)
+    assert result.coverage == 0.8
 
 
-def test_rgb_response_records_normalization_floor_visibility_and_maximum() -> None:
+def test_effective_stops_preserve_zero_and_reject_zero_weights() -> None:
+    result = compute_effective_stops(np.zeros(3), np.ones(3))
+    assert result.available
+    assert result.effective_transmission == 0.0
+    assert np.isposinf(result.effective_stops)
+    assert result.coverage == 1.0
+
+    result = compute_effective_stops(np.ones(3), np.zeros(3))
+    assert not result.available
+    assert "positive common weight" in result.reason
+
+
+def test_rgb_response_is_linear_unfloored_and_visibility_independent() -> None:
     transmission = np.array([1.0, 0.5, np.nan])
     qe = {
         "R": np.array([100.0, 100.0, 100.0]),
@@ -122,16 +127,17 @@ def test_rgb_response_records_normalization_floor_visibility_and_maximum() -> No
         {"R": True, "G": False, "B": True},
     )
 
-    np.testing.assert_allclose(responses["R"], [50.0, 25.0, 0.0])
-    np.testing.assert_array_equal(responses["G"], np.zeros(3))
-    np.testing.assert_allclose(responses["B"], [25.0, 12.5, 0.0])
+    np.testing.assert_allclose(responses["R"], [50.0, 25.0, np.nan], equal_nan=True)
+    np.testing.assert_allclose(responses["G"], [50.0, 25.0, np.nan], equal_nan=True)
+    np.testing.assert_allclose(responses["B"], [25.0, 12.5, np.nan], equal_nan=True)
     np.testing.assert_allclose(
         rgb_matrix,
         [
-            [1.0, 1 / 255, 0.5],
-            [0.5, 1 / 255, 0.25],
-            [1 / 255, 1 / 255, 1 / 255],
+            [50.0, 50.0, 25.0],
+            [25.0, 25.0, 12.5],
+            [np.nan, np.nan, np.nan],
         ],
+        equal_nan=True,
     )
     assert maximum == 50.0
 
@@ -148,6 +154,41 @@ def test_white_balance_returns_channel_response_ratios_to_green() -> None:
     )
 
     assert gains == {"R": 2.0, "G": 1.0, "B": 0.5}
+
+    result = compute_white_balance(
+        np.ones(3),
+        {
+            "R": np.full(3, 100.0),
+            "G": np.full(3, 50.0),
+            "B": np.full(3, 25.0),
+        },
+        np.ones(3),
+    )
+    assert result.available
+    assert result.balance_divisors == {"R": 2.0, "G": 1.0, "B": 0.5}
+    assert result.balance_multipliers == {"R": 0.5, "G": 1.0, "B": 2.0}
+
+
+def test_white_balance_requires_common_rgb_support_and_nonzero_green() -> None:
+    missing = compute_white_balance(
+        np.ones(2), {"R": np.ones(2), "G": np.ones(2)}, np.ones(2)
+    )
+    assert not missing.available
+    assert "R, G, and B" in missing.reason
+
+    zero_green = compute_white_balance(
+        np.ones(2),
+        {"R": np.ones(2), "G": np.zeros(2), "B": np.ones(2)},
+        np.ones(2),
+    )
+    assert not zero_green.available
+    assert zero_green.reason == "green response is zero"
+    with np.testing.assert_raises_regex(ValueError, "green response is zero"):
+        compute_white_balance_gains(
+            np.ones(2),
+            {"R": np.ones(2), "G": np.zeros(2), "B": np.ones(2)},
+            np.ones(2),
+        )
 
 
 def test_channel_mixer_identity_and_red_blue_swap() -> None:
@@ -177,6 +218,10 @@ def test_channel_mixer_identity_and_red_blue_swap() -> None:
         apply_channel_mixing_to_colors(np.array([1.0, 2.0, 3.0]), swap),
         [3.0, 2.0, 1.0],
     )
+
+    invalid = ChannelMixerSettings(red_r=np.nan, enabled=True)
+    with np.testing.assert_raises_regex(ValueError, "must be finite"):
+        apply_channel_mixing_to_responses(responses, invalid)
 
 
 def test_reflector_previews_preserve_leaf_order_and_apply_channel_mixing(

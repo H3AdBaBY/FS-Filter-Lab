@@ -37,28 +37,19 @@ def apply_channel_mixing_to_responses(
     if not mixer_settings.enabled:
         return rgb_responses
         
-    # Get original responses
-    r_orig = rgb_responses.get('R', np.zeros_like(next(iter(rgb_responses.values()))))
-    g_orig = rgb_responses.get('G', np.zeros_like(next(iter(rgb_responses.values()))))  
-    b_orig = rgb_responses.get('B', np.zeros_like(next(iter(rgb_responses.values()))))
-    
-    # Apply mixing transformation
-    r_mixed = (r_orig * mixer_settings.red_r + 
-               g_orig * mixer_settings.red_g + 
-               b_orig * mixer_settings.red_b)
-    
-    g_mixed = (r_orig * mixer_settings.green_r + 
-               g_orig * mixer_settings.green_g + 
-               b_orig * mixer_settings.green_b)
-    
-    b_mixed = (r_orig * mixer_settings.blue_r + 
-               g_orig * mixer_settings.blue_g + 
-               b_orig * mixer_settings.blue_b)
+    if not rgb_responses:
+        return {}
+    template = np.zeros_like(next(iter(rgb_responses.values())), dtype=float)
+    response_matrix = np.stack(
+        [rgb_responses.get(channel, template) for channel in ("R", "G", "B")],
+        axis=-1,
+    )
+    mixed = np.matmul(response_matrix, mixer_settings.to_matrix().T)
     
     return {
-        'R': r_mixed,
-        'G': g_mixed, 
-        'B': b_mixed
+        'R': mixed[..., 0],
+        'G': mixed[..., 1],
+        'B': mixed[..., 2],
     }
 
 
