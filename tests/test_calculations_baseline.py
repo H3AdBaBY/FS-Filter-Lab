@@ -1,0 +1,218 @@
+import numpy as np
+
+from models.constants import EPSILON, INTERP_GRID
+from models.core import ChannelMixerSettings, Filter, FilterCollection
+from services.calculations import (
+    compute_active_transmission,
+    compute_combined_transmission,
+    compute_effective_stops,
+    compute_filter_transmission,
+    compute_reflector_preview_colors,
+    compute_rgb_response,
+    compute_selected_filter_indices,
+    compute_single_reflector_color,
+    compute_white_balance_gains,
+)
+from services.channel_mixer import (
+    apply_channel_mixing_to_colors,
+    apply_channel_mixing_to_responses,
+)
+
+
+def test_no_filter_is_identity_on_the_canonical_grid() -> None:
+    transmission, label, combined = compute_filter_transmission([], np.empty((0, 801)))
+
+    np.testing.assert_array_equal(transmission, np.ones_like(INTERP_GRID))
+    assert label == "No Filter"
+    assert combined is None
+
+
+def test_single_stacked_and_repeated_filter_transmission() -> None:
+    first = np.array([0.5, 0.25, np.nan])
+    second = np.array([0.2, 0.8, 0.5])
+    matrix = np.vstack([first, second])
+
+    single, label, combined = compute_filter_transmission([0], matrix)
+    np.testing.assert_array_equal(single, first)
+    assert label == "Single"
+    assert combined is None
+
+    stacked, label, combined = compute_filter_transmission([0, 1], matrix)
+    np.testing.assert_allclose(stacked[:2], [0.1, 0.2])
+    assert np.isnan(stacked[2])
+    assert label == "Combined"
+    np.testing.assert_array_equal(stacked, combined)
+
+    repeated, _, _ = compute_filter_transmission([0, 0], matrix)
+    np.testing.assert_allclose(repeated[:2], [0.25, 0.0625])
+    assert np.isnan(repeated[2])
+
+
+def test_filter_multiplier_expands_to_repeated_indices() -> None:
+    transmission = np.array([0.5, 0.25])
+    filter_object = Filter(
+        name="Synthetic",
+        number="SYN",
+        manufacturer="Fixture Lab",
+        hex_color="#123456",
+        transmission=transmission,
+    )
+    collection = FilterCollection(
+        filters=[filter_object],
+        df=None,
+        filter_matrix=transmission.reshape(1, -1),
+        extrapolated_masks=np.zeros((1, 2), dtype=bool),
+    )
+    display_name = str(filter_object)
+
+    indices = compute_selected_filter_indices(
+        [display_name], {display_name: 3}, collection
+    )
+
+    assert indices == [0, 0, 0]
+    repeated, _, _ = compute_filter_transmission(indices, collection.filter_matrix)
+    np.testing.assert_allclose(repeated, transmission**3)
+
+
+def test_combination_and_active_paths_preserve_nan_without_clipping() -> None:
+    first = np.array([0.0, 0.5, np.nan])
+    second = np.array([0.5, 0.5, 0.5])
+
+    combined = compute_combined_transmission([first, second])
+    active = compute_active_transmission(["first", "second"], [0, 1], np.vstack([first, second]))
+
+    np.testing.assert_array_equal(combined, active)
+    assert combined[0] == 0.0
+    assert combined[1] == 0.25
+    assert np.isnan(combined[2])
+
+
+def test_effective_stops_use_illuminant_times_qe_weights() -> None:
+    transmission = np.array([0.5, 0.25, np.nan])
+    qe = np.array([100.0, 100.0, 100.0])
+    illuminant = np.array([1.0, 3.0, 1.0])
+
+    average, stops = compute_effective_stops(transmission, qe, illuminant)
+
+    assert average == 0.3125
+    assert stops == -np.log2(0.3125)
+
+
+def test_effective_stops_clip_zero_and_reject_zero_weights() -> None:
+    average, stops = compute_effective_stops(np.zeros(3), np.ones(3))
+    assert average == EPSILON
+    assert stops == -np.log2(EPSILON)
+
+    average, stops = compute_effective_stops(np.ones(3), np.zeros(3))
+    assert np.isnan(average)
+    assert np.isnan(stops)
+
+
+def test_rgb_response_records_normalization_floor_visibility_and_maximum() -> None:
+    transmission = np.array([1.0, 0.5, np.nan])
+    qe = {
+        "R": np.array([100.0, 100.0, 100.0]),
+        "G": np.array([50.0, 50.0, 50.0]),
+        "B": np.array([25.0, 25.0, 25.0]),
+    }
+    responses, rgb_matrix, maximum = compute_rgb_response(
+        transmission,
+        qe,
+        {"R": 2.0, "G": 1.0, "B": 1.0},
+        {"R": True, "G": False, "B": True},
+    )
+
+    np.testing.assert_allclose(responses["R"], [50.0, 25.0, 0.0])
+    np.testing.assert_array_equal(responses["G"], np.zeros(3))
+    np.testing.assert_allclose(responses["B"], [25.0, 12.5, 0.0])
+    np.testing.assert_allclose(
+        rgb_matrix,
+        [
+            [1.0, 1 / 255, 0.5],
+            [0.5, 1 / 255, 0.25],
+            [1 / 255, 1 / 255, 1 / 255],
+        ],
+    )
+    assert maximum == 50.0
+
+
+def test_white_balance_returns_channel_response_ratios_to_green() -> None:
+    gains = compute_white_balance_gains(
+        np.ones(3),
+        {
+            "R": np.full(3, 100.0),
+            "G": np.full(3, 50.0),
+            "B": np.full(3, 25.0),
+        },
+        np.ones(3),
+    )
+
+    assert gains == {"R": 2.0, "G": 1.0, "B": 0.5}
+
+
+def test_channel_mixer_identity_and_red_blue_swap() -> None:
+    responses = {
+        "R": np.array([1.0, 2.0]),
+        "G": np.array([3.0, 4.0]),
+        "B": np.array([5.0, 6.0]),
+    }
+    identity = ChannelMixerSettings(enabled=True)
+    mixed_identity = apply_channel_mixing_to_responses(responses, identity)
+    for channel in ("R", "G", "B"):
+        np.testing.assert_array_equal(mixed_identity[channel], responses[channel])
+
+    swap = ChannelMixerSettings(
+        red_r=0.0,
+        red_b=1.0,
+        green_g=1.0,
+        blue_r=1.0,
+        blue_b=0.0,
+        enabled=True,
+    )
+    mixed = apply_channel_mixing_to_responses(responses, swap)
+    np.testing.assert_array_equal(mixed["R"], responses["B"])
+    np.testing.assert_array_equal(mixed["G"], responses["G"])
+    np.testing.assert_array_equal(mixed["B"], responses["R"])
+    np.testing.assert_array_equal(
+        apply_channel_mixing_to_colors(np.array([1.0, 2.0, 3.0]), swap),
+        [3.0, 2.0, 1.0],
+    )
+
+
+def test_reflector_previews_preserve_leaf_order_and_apply_channel_mixing(
+    leaf_collection, three_sample_qe
+) -> None:
+    transmission = np.ones(3)
+    illuminant = np.ones(3)
+    pixels = compute_reflector_preview_colors(
+        leaf_collection.reflector_matrix,
+        transmission,
+        three_sample_qe,
+        illuminant,
+        leaf_collection,
+    )
+    np.testing.assert_allclose(
+        pixels,
+        [
+            [[0.1, 0.2, 0.3], [0.2, 0.3, 0.4]],
+            [[0.3, 0.4, 0.5], [0.4, 0.5, 0.6]],
+        ],
+    )
+
+    swap = ChannelMixerSettings(
+        red_r=0.0,
+        red_b=1.0,
+        green_g=1.0,
+        blue_r=1.0,
+        blue_b=0.0,
+        enabled=True,
+    )
+    single = compute_single_reflector_color(
+        leaf_collection.reflector_matrix,
+        0,
+        transmission,
+        three_sample_qe,
+        illuminant,
+        swap,
+    )
+    np.testing.assert_allclose(single, [[[0.3, 0.2, 0.1]]])
