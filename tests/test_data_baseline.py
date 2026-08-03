@@ -1,9 +1,15 @@
 import numpy as np
 import pytest
 
-from models.constants import INTERP_GRID
+from models.constants import INTERP_GRID, REPORT_CONFIG
 from services import data as data_service
-from services.data import _process_filter_file, cached_loader, interpolate_to_standard_grid
+from services.data import (
+    _process_filter_file,
+    _process_reflector_file,
+    cached_loader,
+    interpolate_to_standard_grid,
+)
+from services.spectral_policy import prepare_spectrum
 
 
 def test_interpolation_is_linear_and_nan_outside_measured_range() -> None:
@@ -65,3 +71,50 @@ def test_cache_hit_invalidation_and_corruption_are_deterministic(tmp_path, monke
     (cache / "fixture.pkl").write_bytes(b"not a pickle")
     with pytest.warns(RuntimeWarning, match="cache_read_failed"):
         assert cached_loader("fixture", source, load_value) == {"generation": 3}
+
+
+def test_cache_round_trip_preserves_domain_and_extrapolation_masks(
+    tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "spectrum.tsv").write_text(
+        "Wavelength\tValue\n400\t0.2\n500\t0.8\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(data_service, "CACHE_DIR", tmp_path / "cache")
+    prepared = prepare_spectrum(
+        np.array([400.0, 500.0]),
+        np.array([0.2, 0.8]),
+        "transmission",
+        unit="fraction",
+        extrapolation="constant",
+    )
+
+    cached_loader("masks", source, lambda: prepared)
+    restored = cached_loader("masks", source, lambda: None)
+
+    np.testing.assert_array_equal(restored.measured_mask, prepared.measured_mask)
+    np.testing.assert_array_equal(
+        restored.extrapolated_mask, prepared.extrapolated_mask
+    )
+
+
+def test_absorption_data_is_not_accepted_as_reflectance(tmp_path) -> None:
+    absorption = tmp_path / "absorption.tsv"
+    absorption.write_text(
+        "Wavelength\tAbsorption\tName\n400\t0.2\tFixture\n500\t0.4\t\n",
+        encoding="utf-8",
+    )
+
+    assert _process_reflector_file(absorption) is None
+
+
+def test_report_configuration_contains_every_renderer_font_role() -> None:
+    assert {
+        "filter_label",
+        "section_header",
+        "main_title",
+        "title",
+        "subtitle",
+        "legend",
+    } <= REPORT_CONFIG["font_sizes"].keys()

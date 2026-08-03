@@ -86,6 +86,8 @@ def test_combination_and_active_paths_preserve_nan_without_clipping() -> None:
     assert combined[0] == 0.0
     assert combined[1] == 0.25
     assert np.isnan(combined[2])
+    reverse = compute_combined_transmission([second, first])
+    np.testing.assert_allclose(reverse, combined, equal_nan=True)
 
 
 def test_effective_stops_use_illuminant_times_qe_weights() -> None:
@@ -111,6 +113,18 @@ def test_effective_stops_preserve_zero_and_reject_zero_weights() -> None:
     result = compute_effective_stops(np.ones(3), np.zeros(3))
     assert not result.available
     assert "positive common weight" in result.reason
+
+    negative = compute_effective_stops(
+        np.ones(3), np.array([1.0, -1.0, 1.0]), np.ones(3)
+    )
+    assert not negative.available
+    assert "non-negative" in negative.reason
+
+    no_overlap = compute_effective_stops(
+        np.full(3, np.nan), np.ones(3), np.ones(3)
+    )
+    assert not no_overlap.available
+    assert "zero coverage" in no_overlap.reason
 
 
 def test_rgb_response_is_linear_unfloored_and_visibility_independent() -> None:
@@ -191,6 +205,22 @@ def test_white_balance_requires_common_rgb_support_and_nonzero_green() -> None:
         )
 
 
+def test_white_balance_uses_one_common_partial_domain() -> None:
+    result = compute_white_balance(
+        np.array([1.0, 1.0, 1.0]),
+        {
+            "R": np.array([100.0, np.nan, 100.0]),
+            "G": np.array([50.0, 50.0, 50.0]),
+            "B": np.array([25.0, 25.0, np.nan]),
+        },
+        np.ones(3),
+    )
+
+    assert result.available
+    assert result.channel_responses == {"R": 1.0, "G": 0.5, "B": 0.25}
+    assert result.balance_divisors == {"R": 2.0, "G": 1.0, "B": 0.5}
+
+
 def test_channel_mixer_identity_and_red_blue_swap() -> None:
     responses = {
         "R": np.array([1.0, 2.0]),
@@ -222,6 +252,12 @@ def test_channel_mixer_identity_and_red_blue_swap() -> None:
     invalid = ChannelMixerSettings(red_r=np.nan, enabled=True)
     with np.testing.assert_raises_regex(ValueError, "must be finite"):
         apply_channel_mixing_to_responses(responses, invalid)
+
+    extended = ChannelMixerSettings(red_r=-1.0, red_g=2.0, enabled=True)
+    extended_values = apply_channel_mixing_to_colors(
+        np.array([1.0, 2.0, 3.0]), extended
+    )
+    np.testing.assert_array_equal(extended_values, [3.0, 2.0, 3.0])
 
 
 def test_reflector_previews_preserve_leaf_order_and_apply_channel_mixing(

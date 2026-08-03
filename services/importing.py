@@ -165,6 +165,47 @@ def parse_csv(file, separator=';', fallback_separator=','):
         raise ValueError(f"Failed to read CSV file: {str(e)}")
 
 
+def extract_spectral_columns(
+    raw_data: pd.DataFrame,
+    value_column_count: int,
+) -> tuple[np.ndarray, ...]:
+    """Extract aligned spectral columns without dropping unknown samples."""
+    required_columns = value_column_count + 1
+    if raw_data.shape[1] < required_columns:
+        raise ValueError(
+            f"Expected at least {required_columns} spectral columns, "
+            f"found {raw_data.shape[1]}."
+        )
+
+    arrays = tuple(
+        raw_data.iloc[:, index].to_numpy(dtype=float, copy=True)
+        for index in range(required_columns)
+    )
+    wavelengths = arrays[0]
+    if wavelengths.size < 2:
+        raise ValueError("Spectrum requires at least two wavelength samples.")
+    if not np.all(np.isfinite(wavelengths)):
+        raise ValueError("Wavelength samples must be finite numeric values.")
+    for index, values in enumerate(arrays[1:], start=1):
+        if not np.any(np.isfinite(values)):
+            raise ValueError(f"Spectral value column {index} has no finite samples.")
+    return arrays
+
+
+def format_import_diagnostics(*prepared_spectra) -> str:
+    """Return deterministic, de-duplicated diagnostics for an import result."""
+    messages = []
+    seen = set()
+    for prepared in prepared_spectra:
+        for diagnostic in prepared.diagnostics:
+            key = (diagnostic.code, diagnostic.message)
+            if key in seen:
+                continue
+            seen.add(key)
+            messages.append(f"{diagnostic.code}: {diagnostic.message}")
+    return "; ".join(messages)
+
+
 def get_wavelength_range(wavelengths, extrap_lower=False, extrap_upper=False):
     """Determine the wavelength range based on data and extrapolation settings."""
     base_min = int(np.ceil(wavelengths.min() / 5.0)) * 5
@@ -246,18 +287,7 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         except ValueError as e:
             return False, f"CSV parsing failed: {str(e)}"
             
-        wavelengths = raw_data.iloc[:, 0].dropna().values
-        transmissions = raw_data.iloc[:, 1].dropna().values
-
-        # Validate data
-        if wavelengths.size == 0:
-            return False, "Wavelength column (first column) is empty or contains no valid numbers."
-            
-        if transmissions.size == 0:
-            return False, "Transmission column (second column) is empty or contains no valid numbers."
-            
-        if wavelengths.size != transmissions.size:
-            return False, f"Wavelength and transmission columns have different lengths ({wavelengths.size} vs {transmissions.size})."
+        wavelengths, transmissions = extract_spectral_columns(raw_data, 1)
             
         # Check wavelength range validity
         min_wl, max_wl = wavelengths.min(), wavelengths.max()
@@ -267,27 +297,27 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         if max_wl - min_wl < 50:
             return False, f"Wavelength range too narrow ({min_wl:.1f}-{max_wl:.1f} nm). Need at least 50nm range."
         
-        # Validate transmission values (should be 0-100 or 0-1)
-        trans_min, trans_max = transmissions.min(), transmissions.max()
-        if trans_max > 100:
-            return False, f"Transmission values seem too high (max: {trans_max:.2f}). Expected 0-100% or 0-1."
-        if trans_min < 0:
-            return False, f"Transmission values cannot be negative (min: {trans_min:.2f})."
-
         # Determine wavelength range
         min_wl, max_wl = get_wavelength_range(wavelengths, extrap_lower, extrap_upper)
         new_wavelengths = np.arange(min_wl, max_wl + 1, 1)
         
         # Interpolate to the new wavelength grid
-        interpolated = interpolate_spectrum(
-            wavelengths, transmissions, new_wavelengths, 
-            extrap_lower, extrap_upper
+        prepared = prepare_spectrum(
+            wavelengths,
+            transmissions,
+            "transmission",
+            extrapolation="constant" if extrap_lower or extrap_upper else "none",
+            target_grid=new_wavelengths,
         )
+        # Persist the normalized raw curve so the loader can retain excursions
+        # while deriving the separate physical calculation curve.
+        interpolated = prepared.raw_values
 
         # Create DataFrame in tall format
         output_df = pd.DataFrame({
             'Wavelength': new_wavelengths,
             'Transmittance': interpolated,
+            'Extrapolated': prepared.extrapolated_mask,
             'hex_color': meta["hex_color"],
             'Manufacturer': meta["manufacturer"],
             'Name': meta["filter_name"],
@@ -310,10 +340,10 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
 
-        inferred_unit = infer_legacy_unit(transmissions, "transmission")
+        diagnostic_summary = format_import_diagnostics(prepared)
         return True, (
             f"Filter data saved successfully to {out_path}. "
-            f"Legacy unit inference: {inferred_unit}."
+            f"Diagnostics: {diagnostic_summary}."
         )
         
     except ValueError as e:
@@ -357,18 +387,7 @@ def import_illuminant_from_csv(uploaded_file, description):
         except ValueError as e:
             return False, f"CSV parsing failed: {str(e)}"
             
-        wavelengths = raw_data.iloc[:, 0].dropna().values
-        intensity = raw_data.iloc[:, 1].dropna().values
-        
-        # Validate data
-        if wavelengths.size == 0:
-            return False, "Wavelength column (first column) is empty or contains no valid numbers."
-            
-        if intensity.size == 0:
-            return False, "Intensity column (second column) is empty or contains no valid numbers."
-            
-        if wavelengths.size != intensity.size:
-            return False, f"Wavelength and intensity columns have different lengths ({wavelengths.size} vs {intensity.size})."
+        wavelengths, intensity = extract_spectral_columns(raw_data, 1)
             
         # Check wavelength range validity
         min_wl, max_wl = wavelengths.min(), wavelengths.max()
@@ -379,18 +398,23 @@ def import_illuminant_from_csv(uploaded_file, description):
             return False, f"Wavelength range too narrow ({min_wl:.1f}-{max_wl:.1f} nm). Need at least 50nm range."
         
         # Validate intensity values
-        if intensity.min() < 0:
-            return False, f"Intensity values cannot be negative (min: {intensity.min():.2f})."
+        finite_intensity = intensity[np.isfinite(intensity)]
+        if np.any(finite_intensity < 0):
+            return False, (
+                "Intensity values cannot be negative "
+                f"(min: {np.min(finite_intensity):.2f})."
+            )
 
         # Target wavelength range: 300–1100 nm
         full_range = np.arange(300, 1101, 1)
-        intensity_interp = prepare_spectrum(
+        prepared = prepare_spectrum(
             wavelengths,
             intensity,
             "illuminant",
             unit="relative",
             target_grid=full_range,
-        ).physical_values
+        )
+        intensity_interp = prepared.physical_values
 
         # Normalize to 0–100 scale
         max_val = np.nanmax(intensity_interp)
@@ -416,7 +440,10 @@ def import_illuminant_from_csv(uploaded_file, description):
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
 
-        return True, f"Illuminant data saved successfully to {out_path}"
+        return True, (
+            f"Illuminant data saved successfully to {out_path}. "
+            f"Diagnostics: {format_import_diagnostics(prepared)}."
+        )
         
     except ValueError as e:
         # These are validation errors we want to show to the user
@@ -463,24 +490,7 @@ def import_qe_from_csv(uploaded_file, brand, model):
         if raw_data.shape[1] < 4:
             return False, f"Expected at least 4 columns (Wavelength, R, G, B), found {raw_data.shape[1]} columns."
 
-        wavelengths = raw_data.iloc[:, 0].dropna().values
-        r_qe = raw_data.iloc[:, 1].dropna().values
-        g_qe = raw_data.iloc[:, 2].dropna().values  
-        b_qe = raw_data.iloc[:, 3].dropna().values
-        
-        # Validate data
-        if wavelengths.size == 0:
-            return False, "Wavelength column (first column) is empty or contains no valid numbers."
-            
-        min_size = min(wavelengths.size, r_qe.size, g_qe.size, b_qe.size)
-        if min_size == 0:
-            return False, "One or more QE columns (R, G, B) are empty or contain no valid numbers."
-            
-        # Trim arrays to same size
-        wavelengths = wavelengths[:min_size]
-        r_qe = r_qe[:min_size]
-        g_qe = g_qe[:min_size]
-        b_qe = b_qe[:min_size]
+        wavelengths, r_qe, g_qe, b_qe = extract_spectral_columns(raw_data, 3)
         
         # Check wavelength range validity
         min_wl, max_wl = wavelengths.min(), wavelengths.max()
@@ -492,24 +502,26 @@ def import_qe_from_csv(uploaded_file, brand, model):
         
         # Validate QE values
         for channel, values in [("R", r_qe), ("G", g_qe), ("B", b_qe)]:
-            if values.min() < 0:
-                return False, f"{channel} channel QE values cannot be negative (min: {values.min():.3f})."
-            if values.max() > 100:
-                return False, f"{channel} channel QE values seem too high (max: {values.max():.3f}). Expected 0-1 or 0-100."
+            finite_values = values[np.isfinite(values)]
+            if np.any(finite_values < 0):
+                return False, f"{channel} channel QE values cannot be negative (min: {np.min(finite_values):.3f})."
 
         # Interpolate to standard grid (300-1100nm)
         target_wl = np.arange(300, 1101, 1)
         combined_qe = np.concatenate([r_qe, g_qe, b_qe])
         qe_unit = infer_legacy_unit(combined_qe, "qe")
-        r_interp = prepare_spectrum(
+        r_prepared = prepare_spectrum(
             wavelengths, r_qe, "qe", unit=qe_unit, target_grid=target_wl
-        ).physical_values
-        g_interp = prepare_spectrum(
+        )
+        g_prepared = prepare_spectrum(
             wavelengths, g_qe, "qe", unit=qe_unit, target_grid=target_wl
-        ).physical_values
-        b_interp = prepare_spectrum(
+        )
+        b_prepared = prepare_spectrum(
             wavelengths, b_qe, "qe", unit=qe_unit, target_grid=target_wl
-        ).physical_values
+        )
+        r_interp = r_prepared.physical_values
+        g_interp = g_prepared.physical_values
+        b_interp = b_prepared.physical_values
 
         # Create output DataFrame
         output_df = pd.DataFrame({
@@ -535,7 +547,7 @@ def import_qe_from_csv(uploaded_file, brand, model):
             
         return True, (
             f"QE data saved successfully to {out_path}. "
-            f"Legacy unit inference: {qe_unit}."
+            f"Diagnostics: {format_import_diagnostics(r_prepared, g_prepared, b_prepared)}."
         )
         
     except ValueError as e:
@@ -578,18 +590,7 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         except ValueError as e:
             return False, f"CSV parsing failed: {str(e)}"
             
-        wavelengths = raw_data.iloc[:, 0].dropna().values
-        values = raw_data.iloc[:, 1].dropna().values
-
-        # Validate data
-        if wavelengths.size == 0:
-            return False, "Wavelength column (first column) is empty or contains no valid numbers."
-            
-        if values.size == 0:
-            return False, "Value column (second column) is empty or contains no valid numbers."
-            
-        if wavelengths.size != values.size:
-            return False, f"Wavelength and value columns have different lengths ({wavelengths.size} vs {values.size})."
+        wavelengths, values = extract_spectral_columns(raw_data, 1)
             
         # Check wavelength range validity
         min_wl, max_wl = wavelengths.min(), wavelengths.max()
@@ -604,10 +605,14 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         new_wavelengths = np.arange(min_wl, max_wl + 1, 1)
         
         # Interpolate
-        interpolated = interpolate_spectrum(
-            wavelengths, values, new_wavelengths,
-            extrap_lower, extrap_upper, quantity="reflectance"
+        prepared = prepare_spectrum(
+            wavelengths,
+            values,
+            "reflectance",
+            extrapolation="constant" if extrap_lower or extrap_upper else "none",
+            target_grid=new_wavelengths,
         )
+        interpolated = prepared.raw_values
 
         # Create DataFrame
         data_type = meta.get("data_type", "Reflectance")
@@ -621,6 +626,7 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         output_df = pd.DataFrame({
             'Wavelength': new_wavelengths,
             data_type: interpolated,
+            'Extrapolated': prepared.extrapolated_mask,
             'Name': name_array,
             'Description': description_array
         })
@@ -642,10 +648,9 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         except Exception as e:
             return False, f"Failed to save file to {out_path}: {str(e)}"
             
-        inferred_unit = infer_legacy_unit(values, "reflectance")
         return True, (
             f"{data_type} data saved successfully to {out_path}. "
-            f"Legacy unit inference: {inferred_unit}."
+            f"Diagnostics: {format_import_diagnostics(prepared)}."
         )
         
     except ValueError as e:

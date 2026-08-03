@@ -3,6 +3,9 @@
 Status: **implemented and verified**
 Owner approval: **G2-D001 through G2-D010 as written, 2026-08-03**
 
+Post-implementation review: see `Gate2-Review.md` for corrective findings and
+verification evidence.
+
 This gate applies the approved policies in `Gate2-Decision-Proposal.md`. It does
 not claim calibrated colorimetric correctness, and it does not modify bundled
 TSV source files.

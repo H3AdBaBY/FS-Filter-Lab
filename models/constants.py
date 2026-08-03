@@ -255,8 +255,10 @@ REPORT_CONFIG = {
     'font_sizes': {
         'filter_label': 10,                # Filter name labels
         'section_header': 12,              # Section headers
+        'main_title': 18,                  # Report title
         'title': 16,                       # Main title
         'subtitle': 8,                     # Subtitles and legends
+        'legend': 8,                       # Plot legend labels
         'axis_title': 14,                  # Chart axis titles
     }
 }
@@ -294,6 +296,8 @@ class ReportConfig:
     camera_name: str
     illuminant_name: str
     illuminant_curve: np.ndarray
+    apply_white_balance: bool = False
+    channel_mixer: Any = None
 
 @dataclass
 class FilterData:

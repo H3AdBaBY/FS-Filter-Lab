@@ -35,6 +35,7 @@ PYTHONDONTWRITEBYTECODE=1 \
 MPLBACKEND=Agg \
 MPLCONFIGDIR="$VERIFY_CACHE_ROOT/matplotlib" \
 PYTHONDONTWRITEBYTECODE=1 \
+FS_FILTERLAB_OUTPUT_DIR="$VENV_DIR/output" \
 "$VENV_DIR/venv/bin/python" scripts/smoke_test_app.py
 
 "$VENV_DIR/venv/bin/python" -m pip check

@@ -119,7 +119,7 @@ def transmission_metrics(
     metrics = format_transmission_metrics(
         trans, label, result.effective_transmission, result.effective_stops
     )
-    coverage_note = "" if result.coverage == 1.0 else f", partial coverage: {result.coverage:.1%}"
+    coverage_note = "" if result.coverage == 1.0 else f", partial coverage: {result.coverage:.2%}"
     
     # Display results
     st.markdown(

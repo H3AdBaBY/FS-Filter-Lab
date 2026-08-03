@@ -254,7 +254,9 @@ def generate_application_report(
         current_qe=app_state.current_qe,
         camera_name=selected_camera or "UnknownCamera",
         illuminant_name=app_state.illuminant_name or "UnknownIlluminant",
-        illuminant_curve=illuminant
+        illuminant_curve=illuminant,
+        apply_white_balance=app_state.apply_white_balance,
+        channel_mixer=app_state.channel_mixer,
     )
     
     filter_data = create_filter_data(

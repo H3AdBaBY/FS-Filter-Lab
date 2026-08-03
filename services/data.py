@@ -34,6 +34,26 @@ def interpolate_to_standard_grid(wavelengths: np.ndarray, values: np.ndarray) ->
     """
     return prepare_spectrum(wavelengths, values, "illuminant", unit="relative").raw_values
 
+
+def interpolate_extrapolation_mask(
+    wavelengths: np.ndarray,
+    values: pd.Series,
+) -> np.ndarray:
+    """Load an explicit boolean mask onto the canonical grid."""
+    normalized = values.map(
+        lambda value: str(value).strip().lower() in {"true", "1", "yes"}
+        if pd.notna(value)
+        else False
+    ).to_numpy(dtype=bool)
+    order = np.argsort(wavelengths, kind="stable")
+    return np.interp(
+        INTERP_GRID,
+        wavelengths[order],
+        normalized[order].astype(float),
+        left=0.0,
+        right=0.0,
+    ) > 0.5
+
 # Ensure cache directory exists
 Path(CACHE_DIR).mkdir(exist_ok=True)
 
@@ -203,7 +223,12 @@ def _process_filter_file(path: Path) -> Optional[Tuple[dict, np.ndarray, np.ndar
         extrapolation="constant" if is_lee else "none",
     )
     interp_vals = prepared.physical_values
-    extrap_mask = prepared.extrapolated_mask
+    if "Extrapolated" in df.columns:
+        extrap_mask = interpolate_extrapolation_mask(
+            wavelengths, df["Extrapolated"]
+        )
+    else:
+        extrap_mask = prepared.extrapolated_mask
     
     metadata = {
         'Filter Number': fn,
@@ -493,6 +518,18 @@ def _process_reflector_file(path: Path) -> Optional[Tuple[str, PreparedSpectrum]
     prepared = prepare_spectrum(
         wl, refl, "reflectance", source=path.as_posix()
     )
+    if "Extrapolated" in df.columns:
+        extrapolated_mask = interpolate_extrapolation_mask(
+            wl, df["Extrapolated"]
+        )
+        prepared = PreparedSpectrum(
+            raw_values=prepared.raw_values,
+            physical_values=prepared.physical_values,
+            unit=prepared.unit,
+            diagnostics=prepared.diagnostics,
+            measured_mask=prepared.measured_mask,
+            extrapolated_mask=extrapolated_mask,
+        )
     return name, prepared
 
 
@@ -518,6 +555,7 @@ def _load_reflector_collection_from_files() -> ReflectorCollection:
                 name=name,
                 values=prepared.physical_values,
                 raw_values=prepared.raw_values,
+                extrapolated_mask=prepared.extrapolated_mask,
                 unit_interpretation=prepared.unit,
                 diagnostics=list(prepared.diagnostics),
             ))

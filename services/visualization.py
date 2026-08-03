@@ -272,7 +272,7 @@ def _add_light_loss_section(ax1, label: str, result: Any):
         detail = (
             f"{label} → {stops} stops "
             f"(Green-QE weighted: {result.effective_transmission * 100:.1f}%, "
-            f"coverage: {result.coverage:.1%})"
+            f"coverage: {result.coverage:.2%})"
         )
     ax1.text(0.01, 0.3, detail, fontsize=REPORT_CONFIG['font_sizes']['section_header'])
 
@@ -298,10 +298,11 @@ def _add_transmission_plot_section(ax2, selected_indices: List[int], df: Any, fi
     ax2.set_ylim(0, 100)
 
 
-def _add_white_balance_section(ax3, balance: Any):
+def _add_white_balance_section(ax3, balance: Any, applied: bool):
     """Add structured sensor-response balance to the report."""
     ax3.axis('off')
-    ax3.text(0.01, 0.6, 'Sensor-Response Balance Multipliers (Green = 1):', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
+    status = "Applied" if applied else "Not applied"
+    ax3.text(0.01, 0.6, f'Sensor-Response Balance Multipliers ({status}; Green = 1):', fontsize=REPORT_CONFIG['font_sizes']['section_header'], fontweight='bold')
     if not balance.available:
         detail = f"Unavailable: {balance.reason}"
     else:
@@ -312,18 +313,27 @@ def _add_white_balance_section(ax3, balance: Any):
 
 def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dict[str, float], 
                                active_trans: np.ndarray, interp_grid: np.ndarray, 
-                               camera_name: str, illuminant_name: str):
+                               camera_name: str, illuminant_name: str,
+                               apply_white_balance: bool,
+                               channel_mixer: Optional[ChannelMixerSettings]):
     """Add sensor-weighted response section to the report."""
     maxresp = 0
     stack = {}
     
+    responses = _calculate_channel_responses(
+        active_trans,
+        current_qe,
+        {"R": True, "G": True, "B": True},
+        wb,
+        apply_white_balance,
+        channel_mixer,
+    )
+
     # Plot in correct RGB order
     for ch in ['R', 'G', 'B']:
-        qe = current_qe.get(ch)
-        if qe is None:
+        resp = responses.get(ch)
+        if resp is None:
             continue
-        gains = wb.get(ch, 1.0)
-        resp = np.nan_to_num(active_trans * (qe / 100)) * 100 / gains
         ax4.plot(interp_grid, resp, label=f"{ch} Channel", lw=REPORT_CONFIG['channel_line_width'], color=COLOR_MAP[ch])
         maxresp = max(maxresp, np.nanmax(resp))
         stack[ch] = resp
@@ -341,7 +351,13 @@ def _add_sensor_response_section(ax4, current_qe: Dict[str, np.ndarray], wb: Dic
     extent = [interp_grid.min(), interp_grid.max(), maxresp * 1.02, maxresp * 1.07]
     ax4.imshow(rgb_matrix[np.newaxis, :, :], aspect='auto', extent=extent)
 
-    ax4.set_title('Sensor-Weighted Response (White-Balanced)', fontsize=REPORT_CONFIG['font_sizes']['title'], fontweight='bold')
+    processing = []
+    if apply_white_balance:
+        processing.append("Balanced")
+    if channel_mixer is not None and channel_mixer.enabled:
+        processing.append("Mixed")
+    suffix = f" ({', '.join(processing)})" if processing else ""
+    ax4.set_title(f'Sensor-Weighted Response{suffix}', fontsize=REPORT_CONFIG['font_sizes']['title'], fontweight='bold')
     subtitle = f"Quantum Efficiency: {camera_name or 'None'}   |   Illuminant: {illuminant_name or 'None'}"
     ax4.text(0.5, 0.98, subtitle, transform=ax4.transAxes, ha='center', va='bottom', fontsize=REPORT_CONFIG['font_sizes']['subtitle'])
     ax4.set_xlabel('Wavelength (nm)')
@@ -359,7 +375,8 @@ def _save_report_to_file(fig, buf: io.BytesIO, fname: str, camera_name: str, ill
     plt.close(fig)
 
     # Save to /outputs/[QE]/[Illuminant] folder
-    output_dir = os.path.join("output", sanitize_fn(camera_name), sanitize_fn(illuminant_name))
+    output_root = os.environ.get("FS_FILTERLAB_OUTPUT_DIR", "output")
+    output_dir = os.path.join(output_root, sanitize_fn(camera_name), sanitize_fn(illuminant_name))
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, fname)
     with open(output_path, "wb") as f:
@@ -418,7 +435,9 @@ def create_report_config(
     current_qe: Dict[str, np.ndarray], 
     camera_name: str,
     illuminant_name: str,
-    illuminant_curve: np.ndarray
+    illuminant_curve: np.ndarray,
+    apply_white_balance: bool = False,
+    channel_mixer: Optional[ChannelMixerSettings] = None,
 ) -> ReportConfig:
     """Helper function to create ReportConfig from individual parameters."""
     return ReportConfig(
@@ -426,7 +445,9 @@ def create_report_config(
         current_qe=current_qe,
         camera_name=camera_name,
         illuminant_name=illuminant_name,
-        illuminant_curve=illuminant_curve
+        illuminant_curve=illuminant_curve,
+        apply_white_balance=apply_white_balance,
+        channel_mixer=channel_mixer,
     )
 
 def create_filter_data(
@@ -496,7 +517,9 @@ def generate_report_png_v2(
         camera_name=report_config.camera_name,
         illuminant_name=report_config.illuminant_name,
         sanitize_fn=computation_fns.sanitize_fn,
-        illuminant_curve=report_config.illuminant_curve
+        illuminant_curve=report_config.illuminant_curve,
+        apply_white_balance=report_config.apply_white_balance,
+        channel_mixer=report_config.channel_mixer,
     )
 
 def generate_report_png(
@@ -516,7 +539,9 @@ def generate_report_png(
     camera_name: str,
     illuminant_name: str,
     sanitize_fn: Callable[[str], str],
-    illuminant_curve: np.ndarray
+    illuminant_curve: np.ndarray,
+    apply_white_balance: bool,
+    channel_mixer: Optional[ChannelMixerSettings],
 ) -> Dict[str, Any]:
     """
     Generate a PNG report of the current filter configuration.
@@ -555,9 +580,12 @@ def generate_report_png(
     _add_light_loss_section(fig.add_subplot(gs[1]), label, effective_result)
     _add_transmission_plot_section(fig.add_subplot(gs[2]), selected_indices, df, filter_matrix, 
                                   masks, add_curve_fn, interp_grid, active_trans)
-    _add_white_balance_section(fig.add_subplot(gs[3]), balance)
+    _add_white_balance_section(
+        fig.add_subplot(gs[3]), balance, apply_white_balance
+    )
     _add_sensor_response_section(fig.add_subplot(gs[4]), current_qe, wb, active_trans, 
-                               interp_grid, camera_name, illuminant_name)
+                               interp_grid, camera_name, illuminant_name,
+                               apply_white_balance, channel_mixer)
 
     # Finalize layout
     fig.suptitle("Filter Report", fontsize=REPORT_CONFIG['font_sizes']['main_title'], fontweight='bold')
@@ -996,6 +1024,21 @@ def create_leaf_reflectance_figure(
             name=leaf_name,
             line=_create_line_style(leaf_colors[i])
         ))
+        extrapolated_mask = getattr(
+            reflector_collection.reflectors[leaf_idx], "extrapolated_mask", None
+        )
+        if extrapolated_mask is not None and np.any(extrapolated_mask):
+            fig.add_trace(go.Scatter(
+                x=interp_grid,
+                y=np.where(extrapolated_mask, reflector_data, np.nan),
+                mode='lines',
+                name=f"{leaf_name} (extrapolated)",
+                showlegend=False,
+                line={
+                    **_create_line_style(leaf_colors[i]),
+                    'dash': CHART_LINE_STYLES['extrapolated']['dash'],
+                },
+            ))
     
     apply_plotly_default_style(fig, "Leaf Reflectance Spectra", y_title="Reflectance", 
                               height=height or CHART_HEIGHTS['default'])
@@ -1019,7 +1062,7 @@ def create_single_reflectance_figure(
     reflector_data = reflector_matrix[selected_reflector_idx]
     reflector_name = reflector_collection.reflectors[selected_reflector_idx].name
     
-    return _create_standard_plotly_figure(
+    fig = _create_standard_plotly_figure(
         x_data=interp_grid,
         y_data_dict={reflector_name: reflector_data},
         title=f"Reflectance: {reflector_name}",
@@ -1027,6 +1070,24 @@ def create_single_reflectance_figure(
         color_map={reflector_name: CHART_COLORS['single_reflector']},
         height=height
     )
+    extrapolated_mask = getattr(
+        reflector_collection.reflectors[selected_reflector_idx],
+        "extrapolated_mask",
+        None,
+    )
+    if extrapolated_mask is not None and np.any(extrapolated_mask):
+        fig.add_trace(go.Scatter(
+            x=interp_grid,
+            y=np.where(extrapolated_mask, reflector_data, np.nan),
+            mode='lines',
+            name=f"{reflector_name} (extrapolated)",
+            showlegend=False,
+            line={
+                **_create_line_style(CHART_COLORS['single_reflector']),
+                'dash': CHART_LINE_STYLES['extrapolated']['dash'],
+            },
+        ))
+    return fig
 
 
 def create_sparkline_plot(

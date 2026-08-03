@@ -235,6 +235,7 @@ class ReflectorSpectrum:
     name: str
     values: np.ndarray  # Reflectance values across the spectrum
     raw_values: Optional[np.ndarray] = None
+    extrapolated_mask: Optional[np.ndarray] = None
     unit_interpretation: Optional[str] = None
     diagnostics: List[Any] = field(default_factory=list)
 
