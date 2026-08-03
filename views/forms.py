@@ -45,7 +45,7 @@ def filter_by_trans_at_wavelength(
     wavelength: int,
     min_t: float = 0.0,
     max_t: float = 1.0,
-) -> Tuple[pd.DataFrame, np.ndarray]:
+) -> Tuple[pd.DataFrame, np.ndarray, int]:
     """
     Filter DataFrame by transmission at a specific wavelength.
     
@@ -63,16 +63,21 @@ def filter_by_trans_at_wavelength(
     idx = np.where(interp_grid == wavelength)[0]
     if idx.size == 0:
         handle_error(f"Wavelength {wavelength} nm not in interpolation grid")
-        return df, np.zeros(len(df))
+        return df, np.zeros(len(df)), 0
     selected_index = idx[0]
 
     # Make sure we're filtering the correct rows in the matrix
     df_indices = df.index.to_numpy()
     transmission_values = matrix[df_indices, selected_index]
 
-    transmission_mask = (transmission_values >= min_t) & (transmission_values <= max_t)
+    finite = np.isfinite(transmission_values)
+    transmission_mask = finite & (transmission_values >= min_t) & (transmission_values <= max_t)
 
-    return df.iloc[transmission_mask], transmission_values[transmission_mask]
+    return (
+        df.iloc[transmission_mask],
+        transmission_values[transmission_mask],
+        int(np.count_nonzero(~finite)),
+    )
 
 
 def sort_by_hex_rainbow(df: pd.DataFrame, hex_col: str = "Hex Color") -> pd.DataFrame:
@@ -105,8 +110,20 @@ def sort_by_hex_rainbow(df: pd.DataFrame, hex_col: str = "Hex Color") -> pd.Data
 
     hsl_df = df[hex_col].apply(hex_to_hsl).apply(pd.Series)
     hsl_df.columns = ["_hue", "_sat", "_lit"]
-    df_sorted = pd.concat([df, hsl_df], axis=1).sort_values(by=["_hue", "_sat", "_lit"])
-    return df_sorted.drop(columns=["_hue", "_sat", "_lit"])
+    temp = pd.concat([df, hsl_df], axis=1)
+    temp["_invalid_color"] = ~valid_mask
+    temp["_identity"] = (
+        temp["Filter Name"].astype(str)
+        + " (" + temp["Filter Number"].astype(str)
+        + ", " + temp["Manufacturer"].astype(str) + ")"
+    ).str.casefold()
+    df_sorted = temp.sort_values(
+        by=["_invalid_color", "_hue", "_sat", "_lit", "_identity"],
+        kind="stable",
+    )
+    return df_sorted.drop(
+        columns=["_hue", "_sat", "_lit", "_invalid_color", "_identity"]
+    )
 
 
 def sort_by_trans_at_wavelength(df: pd.DataFrame, trans_vals: np.ndarray, ascending: bool = False) -> pd.DataFrame:
@@ -123,7 +140,30 @@ def sort_by_trans_at_wavelength(df: pd.DataFrame, trans_vals: np.ndarray, ascend
     """
     temp = df.copy()
     temp["_t"] = trans_vals
-    return temp.sort_values(by="_t", ascending=ascending).drop(columns=["_t"])
+    temp["_identity"] = (
+        temp["Filter Name"].astype(str)
+        + " (" + temp["Filter Number"].astype(str)
+        + ", " + temp["Manufacturer"].astype(str) + ")"
+    ).str.casefold()
+    return temp.sort_values(
+        by=["_t", "_identity"],
+        ascending=[ascending, True],
+        kind="stable",
+    ).drop(columns=["_t", "_identity"])
+
+
+def sort_by_text_field(df: pd.DataFrame, field: str) -> pd.DataFrame:
+    """Case-insensitive stable text sort with display identity tie-breaking."""
+    temp = df.copy()
+    temp["_primary"] = temp[field].astype(str).str.casefold()
+    temp["_identity"] = (
+        temp["Filter Name"].astype(str)
+        + " (" + temp["Filter Number"].astype(str)
+        + ", " + temp["Manufacturer"].astype(str) + ")"
+    ).str.casefold()
+    return temp.sort_values(
+        by=["_primary", "_identity"], kind="stable"
+    ).drop(columns=["_primary", "_identity"])
 
 
 # -- Advanced Search UI -----------------------------------------
@@ -179,7 +219,7 @@ def advanced_filter_search(df: pd.DataFrame, filter_matrix: np.ndarray) -> None:
     sort_choice = st.session_state.get("sort_choice", "Filter Number")
 
     filters_by_manufacturer = filter_by_manufacturer(df, manufs)
-    filtered_results, transmission_values = filter_by_trans_at_wavelength(
+    filtered_results, transmission_values, unknown_count = filter_by_trans_at_wavelength(
         filters_by_manufacturer, INTERP_GRID, filter_matrix, wl, tmin / 100, tmax / 100
     )
 
@@ -188,12 +228,17 @@ def advanced_filter_search(df: pd.DataFrame, filter_matrix: np.ndarray) -> None:
     elif sort_choice.startswith("Trans @"):
         sorted_filters = sort_by_trans_at_wavelength(filtered_results, transmission_values)
     elif sort_choice == "Filter Name":
-        sorted_filters = filtered_results.sort_values("Filter Name")
+        sorted_filters = sort_by_text_field(filtered_results, "Filter Name")
     else:
-        sorted_filters = filtered_results.sort_values("Filter Number")
+        sorted_filters = sort_by_text_field(filtered_results, "Filter Number")
 
     st.markdown("---")
     st.write(f"**{len(sorted_filters)} filters found:**")
+    if unknown_count:
+        st.caption(
+            f"{unknown_count} filters excluded because transmission is unknown "
+            f"at {wl} nm."
+        )
 
     for idx, row in sorted_filters.iterrows():
         hex_color = row["Hex Color"]
@@ -203,6 +248,7 @@ def advanced_filter_search(df: pd.DataFrame, filter_matrix: np.ndarray) -> None:
         number = row["Filter Number"]
         name = row["Filter Name"]
         brand = row["Manufacturer"]
+        display_identity = f"{name} ({number}, {brand})"
         text_color = "#FFF" if is_dark_color(hex_color) else "#000"
 
         with st.container():
@@ -224,13 +270,19 @@ def advanced_filter_search(df: pd.DataFrame, filter_matrix: np.ndarray) -> None:
 
             toggle_key = f"filter_toggle_{idx}"
             with cols[1]:
-                show_details = st.toggle("Details", key=toggle_key, label_visibility="collapsed")
+                show_details = st.toggle(
+                    f"Show details for {display_identity}",
+                    key=toggle_key,
+                    label_visibility="collapsed",
+                )
 
             if show_details:
                 # Use cached version to prevent regenerating the plot on every rerun
                 fig = cached_create_sparkline_plot(INTERP_GRID, filter_matrix[idx, :], color=hex_color)
                 st.plotly_chart(fig, width='content')
-                st.checkbox("Select this filter", key=f"adv_sel_{idx}")
+                st.checkbox(
+                    f"Select {display_identity}", key=f"adv_sel_{idx}"
+                )
 
     st.markdown("---")
     col_done, col_cancel = st.columns([1, 1])
@@ -248,16 +300,18 @@ def advanced_filter_search(df: pd.DataFrame, filter_matrix: np.ndarray) -> None:
             ]
 
             st.session_state["_pending_selected_filters"] = selected_display
-            st.session_state.advanced = False
+            st.session_state["_close_advanced_search"] = True
+            for idx in sorted_filters.index:
+                st.session_state.pop(f"adv_sel_{idx}", None)
+                st.session_state.pop(f"filter_toggle_{idx}", None)
             st.rerun()
-
-    for idx in sorted_filters.index:
-        st.session_state.pop(f"adv_sel_{idx}", None)
-        st.session_state.pop(f"filter_toggle_{idx}", None)
 
     with col_cancel:
         if st.button(UI_BUTTONS['cancel']):
-            st.session_state.advanced = False
+            st.session_state["_close_advanced_search"] = True
+            for idx in sorted_filters.index:
+                st.session_state.pop(f"adv_sel_{idx}", None)
+                st.session_state.pop(f"filter_toggle_{idx}", None)
             st.rerun()
 
 
@@ -270,6 +324,9 @@ def import_data_form() -> None:
     """
     st.markdown("---")
     st.subheader("Import Data")
+    import_status = st.session_state.get("import_status")
+    if import_status:
+        st.success(import_status)
     
     # Create tabs for different import types
     tab1, tab2, tab3, tab4 = st.tabs(["Filters", "Illuminants", "Camera QE", "Reflectance"])
@@ -293,7 +350,7 @@ def import_filter_tab():
     from services.importing import import_filter_from_csv
     
     uploaded_file = st.file_uploader(
-        "Upload CSV (Wavelength, Transmittance)", 
+        "Upload CSV (Wavelength nm, Transmittance)",
         type="csv", 
         key="filter_upload"
     )
@@ -309,10 +366,17 @@ def import_filter_tab():
             with col2:
                 filter_number = st.text_input("Filter Number", value="001")
                 hex_color = st.color_picker("Color", value="#808080")
-            
-            # Always extrapolate to full range for consistency
-            extrap_lower = True
-            extrap_upper = True
+
+            unit = st.selectbox(
+                "Transmittance Unit", ["fraction", "percent"],
+                help="Choose the unit used by the uploaded values.",
+            )
+            extrap_lower = st.checkbox(
+                "Constant extrapolation down to 300 nm", value=False
+            )
+            extrap_upper = st.checkbox(
+                "Constant extrapolation up to 1100 nm", value=False
+            )
             
             submitted = st.form_submit_button("Import Filter", type="primary")
             
@@ -329,11 +393,13 @@ def import_filter_tab():
                             "hex_color": hex_color
                         }
                         
-                        success, message = import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper)
+                        success, message = import_filter_from_csv(
+                            uploaded_file, meta, extrap_lower, extrap_upper, unit
+                        )
                         
                         if success:
-                            st.success("Filter imported successfully!")
-                            st.rerun()  # Refresh to show new data
+                            st.session_state["import_status"] = message
+                            st.rerun()
                         else:
                             st.error(f"Import failed: {message}")
 
@@ -343,7 +409,7 @@ def import_illuminant_tab():
     from services.importing import import_illuminant_from_csv
     
     uploaded_file = st.file_uploader(
-        "Upload CSV (Wavelength, Power)", 
+        "Upload CSV (Wavelength nm, Relative Power)",
         type="csv", 
         key="illuminant_upload"
     )
@@ -366,7 +432,7 @@ def import_illuminant_tab():
                         success, message = import_illuminant_from_csv(uploaded_file, description.strip())
                         
                         if success:
-                            st.success("Illuminant imported successfully!")
+                            st.session_state["import_status"] = message
                             st.rerun()
                         else:
                             st.error(f"Import failed: {message}")
@@ -377,7 +443,7 @@ def import_qe_tab():
     from services.importing import import_qe_from_csv
     
     uploaded_file = st.file_uploader(
-        "Upload CSV (Wavelength, R, G, B)", 
+        "Upload CSV (Wavelength nm, R, G, B)",
         type="csv", 
         key="qe_upload"
     )
@@ -390,6 +456,11 @@ def import_qe_tab():
                 brand = st.text_input("Brand", value="Custom")
             with col2:
                 model = st.text_input("Model", value="Custom Model")
+
+            unit = st.selectbox(
+                "QE Unit", ["percent", "fraction"],
+                help="QE is stored internally as percent.",
+            )
             
             submitted = st.form_submit_button("Import Camera QE", type="primary")
             
@@ -398,21 +469,23 @@ def import_qe_tab():
                     st.error("Both brand and model are required")
                 else:
                     with st.spinner("Importing..."):
-                        success, message = import_qe_from_csv(uploaded_file, brand.strip(), model.strip())
+                        success, message = import_qe_from_csv(
+                            uploaded_file, brand.strip(), model.strip(), unit
+                        )
                         
                         if success:
-                            st.success("Camera QE imported successfully!")
+                            st.session_state["import_status"] = message
                             st.rerun()
                         else:
                             st.error(f"Import failed: {message}")
 
 
 def import_reflectance_tab():
-    """Reflectance/absorption import interface."""
+    """Reflectance import interface."""
     from services.importing import import_reflectance_absorption_from_csv
     
     uploaded_file = st.file_uploader(
-        "Upload CSV (Wavelength, Reflectance/Absorption)", 
+        "Upload CSV (Wavelength nm, Reflectance)",
         type="csv", 
         key="reflectance_upload"
     )
@@ -423,15 +496,27 @@ def import_reflectance_tab():
             
             with col1:
                 name = st.text_input("Spectrum Name", value="Custom Spectrum", max_chars=50)
-                data_type = st.selectbox("Data Type", ["Reflectance", "Absorption"])
+                unit = st.selectbox(
+                    "Reflectance Unit", ["fraction", "percent"],
+                    help="Choose the unit used by the uploaded values.",
+                )
             
             with col2:
                 category = st.selectbox("Category", ["Plant", "Other"])
                 description = st.text_area("Description (optional)", height=60)
             
-            # Always extrapolate to full range for consistency
-            extrap_lower = True
-            extrap_upper = True
+            st.caption(
+                "Absorption is not converted to reflectance because no "
+                "conversion measurement model is approved."
+            )
+            extrap_lower = st.checkbox(
+                "Constant extrapolation down to 300 nm", value=False,
+                key="reflectance_extrapolate_lower",
+            )
+            extrap_upper = st.checkbox(
+                "Constant extrapolation up to 1100 nm", value=False,
+                key="reflectance_extrapolate_upper",
+            )
             
             submitted = st.form_submit_button("Import Spectrum", type="primary")
             
@@ -442,17 +527,17 @@ def import_reflectance_tab():
                     with st.spinner("Importing..."):
                         meta = {
                             "name": name.strip(),
-                            "data_type": data_type,
+                            "data_type": "Reflectance",
                             "category": category,
                             "description": description.strip()
                         }
                         
                         success, message = import_reflectance_absorption_from_csv(
-                            uploaded_file, meta, extrap_lower, extrap_upper
+                            uploaded_file, meta, extrap_lower, extrap_upper, unit
                         )
                         
                         if success:
-                            st.success("Spectrum imported successfully!")
+                            st.session_state["import_status"] = message
                             st.rerun()
                         else:
                             st.error(f"Import failed: {message}")

@@ -1,6 +1,6 @@
 # Gate 4 Remaining Parity and UX Decision Proposal
 
-Status: **Proposed — owner approval required before implementation**
+Status: **Approved for implementation**
 
 Prerequisites: Gate 2 scientific policies and Gate 3 vertical workflow accepted
 
@@ -325,6 +325,4 @@ Gate 4 exits only when:
 
 ## Approval record
 
-No Gate 4 implementation is authorized by this proposal. Record owner approval
-or amendments here before changing search, importer, processing-parity, preview,
-state, accessibility, documentation, or launcher behavior.
+The owner approved `G4-D001` through `G4-D012` as written on 2026-08-03.

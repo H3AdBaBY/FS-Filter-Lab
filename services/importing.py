@@ -26,10 +26,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import os
+from uuid import uuid4
 from typing import Tuple, Dict, Any
 import logging
 
-from services.spectral_policy import infer_legacy_unit, prepare_spectrum
+from services.spectral_policy import prepare_spectrum
+from services.data_locations import get_user_data_root
 
 # Configure logging for debugging import issues
 logger = logging.getLogger(__name__)
@@ -124,6 +126,79 @@ def safe_file_save(df: pd.DataFrame, file_path: Path, data_type: str) -> Tuple[b
         return False, f"Failed to save file to {file_path}: {str(e)}"
 
 
+IMPORT_CACHE_KEYS = {
+    "filter": "filter_data",
+    "illuminant": "illuminants",
+    "qe": "qe_data",
+    "reflector": "reflectors",
+}
+
+
+def _validate_explicit_unit(unit: str | None, quantity: str) -> str:
+    if unit not in {"fraction", "percent"}:
+        raise ValueError(
+            f"Explicit {quantity} unit is required: choose fraction or percent."
+        )
+    return unit
+
+
+def _identity_exists(data_type: str, identity: str) -> bool:
+    """Check stable identities across bundled and user collections."""
+    from services.data import (
+        load_filter_collection,
+        load_illuminant_collection,
+        load_quantum_efficiencies,
+        load_reflector_collection,
+    )
+
+    if data_type == "filter":
+        return identity in load_filter_collection().get_display_to_index_map()
+    if data_type == "illuminant":
+        illuminants, _ = load_illuminant_collection()
+        return identity in illuminants
+    if data_type == "qe":
+        camera_keys, _, _ = load_quantum_efficiencies()
+        return identity in camera_keys
+    if data_type == "reflector":
+        collection = load_reflector_collection()
+        return identity in {item.name for item in collection.reflectors}
+    raise ValueError(f"Unknown import data type: {data_type}")
+
+
+def _publish_user_dataset(
+    frame: pd.DataFrame,
+    relative_directory: Path,
+    filename: str,
+    data_type: str,
+    identity: str,
+) -> Path:
+    """Atomically publish a validated import without overwriting any dataset."""
+    destination = get_user_data_root() / relative_directory / filename
+    if destination.exists() or _identity_exists(data_type, identity):
+        raise FileExistsError(
+            f"A {data_type} dataset with identity '{identity}' already exists; "
+            "imports never overwrite existing data."
+        )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        frame.to_csv(temporary, sep="\t", index=False)
+        os.link(temporary, destination)
+    except FileExistsError:
+        raise FileExistsError(
+            f"Import destination already exists: {destination.as_posix()}"
+        )
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+    from services.data import invalidate_collection_cache
+
+    invalidate_collection_cache(IMPORT_CACHE_KEYS[data_type])
+    return destination
+
+
 def parse_csv(file, separator=';', fallback_separator=','):
     """Parse a CSV file with auto-detection of separator and better error handling."""
     try:
@@ -149,6 +224,10 @@ def parse_csv(file, separator=';', fallback_separator=','):
             # Fallback for older pandas versions
             raw_data = raw_data.applymap(safe_float)
         
+        # Accept one optional header row, but no ambiguous non-numeric body rows.
+        if len(raw_data) > 1 and raw_data.iloc[0].isna().all():
+            raw_data = raw_data.iloc[1:].reset_index(drop=True)
+
         # Check for too many NaN values
         nan_count = raw_data.isna().sum().sum()
         total_count = raw_data.size
@@ -255,7 +334,9 @@ def get_extrapolation_suffix(extrap_lower, extrap_upper):
 # FILTER IMPORT
 # ============================================================================
 
-def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
+def import_filter_from_csv(
+    uploaded_file, meta, extrap_lower, extrap_upper, unit: str | None = None
+):
     """
     Import filter data from a CSV file and save it to the data directory.
     
@@ -281,6 +362,8 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         if missing_keys:
             return False, f"Missing required metadata: {', '.join(missing_keys)}"
         
+        unit = _validate_explicit_unit(unit, "transmission")
+
         # Parse the CSV with detailed error handling
         try:
             raw_data = parse_csv(uploaded_file)
@@ -306,6 +389,7 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
             wavelengths,
             transmissions,
             "transmission",
+            unit=unit,
             extrapolation="constant" if extrap_lower or extrap_upper else "none",
             target_grid=new_wavelengths,
         )
@@ -321,7 +405,8 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
             'hex_color': meta["hex_color"],
             'Manufacturer': meta["manufacturer"],
             'Name': meta["filter_name"],
-            'Filter Number': meta["filter_number"]
+            'Filter Number': meta["filter_number"],
+            'Source File': getattr(uploaded_file, "name", "uploaded.csv")
         })
 
         # Generate filename and save
@@ -330,15 +415,17 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
         suffix = get_extrapolation_suffix(extrap_lower, extrap_upper)
         filename = f"{sanitized}{suffix}.tsv"
         
-        out_dir = os.path.join("data", "filters_data", meta["manufacturer"])
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, filename)
-        
-        # Save the file
-        try:
-            output_df.to_csv(out_path, sep='\t', index=False)
-        except Exception as e:
-            return False, f"Failed to save file to {out_path}: {str(e)}"
+        identity = (
+            f"{meta['filter_name']} ({meta['filter_number']}, "
+            f"{meta['manufacturer']})"
+        )
+        out_path = _publish_user_dataset(
+            output_df,
+            Path("filters_data") / sanitize_filename(meta["manufacturer"]),
+            filename,
+            "filter",
+            identity,
+        )
 
         diagnostic_summary = format_import_diagnostics(prepared)
         return True, (
@@ -346,7 +433,7 @@ def import_filter_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
             f"Diagnostics: {diagnostic_summary}."
         )
         
-    except ValueError as e:
+    except (ValueError, FileExistsError) as e:
         # These are validation errors we want to show to the user
         return False, str(e)
     except Exception as e:
@@ -378,9 +465,6 @@ def import_illuminant_from_csv(uploaded_file, description):
         if not description or not description.strip():
             return False, "Description cannot be empty."
         
-        out_dir = Path("data/illuminants")
-        out_dir.mkdir(parents=True, exist_ok=True)
-
         # Parse CSV data with error handling
         try:
             raw_data = parse_csv(uploaded_file)
@@ -427,25 +511,29 @@ def import_illuminant_from_csv(uploaded_file, description):
         df_out = pd.DataFrame({
             "Wavelength (nm)": full_range,
             "Relative Power": intensity_rel,
-            "Description": description
+            "Name": description,
+            "Description": description,
+            "Normalization": "Peak normalized to 100",
+            "Source File": getattr(uploaded_file, "name", "uploaded.csv"),
         })
 
         # Save file
-        filename = sanitize_filename(f"illuminant_{description}") + ".tsv"
-        out_path = out_dir / filename
-        
-        # Save the file
-        try:
-            df_out.to_csv(out_path, sep="\t", index=False)
-        except Exception as e:
-            return False, f"Failed to save file to {out_path}: {str(e)}"
+        filename = sanitize_filename(description) + ".tsv"
+        out_path = _publish_user_dataset(
+            df_out,
+            Path("illuminants"),
+            filename,
+            "illuminant",
+            description,
+        )
 
         return True, (
             f"Illuminant data saved successfully to {out_path}. "
+            "Normalization: peak normalized to 100. "
             f"Diagnostics: {format_import_diagnostics(prepared)}."
         )
         
-    except ValueError as e:
+    except (ValueError, FileExistsError) as e:
         # These are validation errors we want to show to the user
         return False, str(e)
     except Exception as e:
@@ -458,7 +546,7 @@ def import_illuminant_from_csv(uploaded_file, description):
 # QUANTUM EFFICIENCY IMPORT
 # ============================================================================
 
-def import_qe_from_csv(uploaded_file, brand, model):
+def import_qe_from_csv(uploaded_file, brand, model, unit: str | None = None):
     """
     Import quantum efficiency data from a CSV file.
     
@@ -481,6 +569,8 @@ def import_qe_from_csv(uploaded_file, brand, model):
         if not model or not model.strip():
             return False, "Camera model cannot be empty."
         
+        unit = _validate_explicit_unit(unit, "QE")
+
         # Parse the CSV with error handling
         try:
             raw_data = parse_csv(uploaded_file)
@@ -508,16 +598,14 @@ def import_qe_from_csv(uploaded_file, brand, model):
 
         # Interpolate to standard grid (300-1100nm)
         target_wl = np.arange(300, 1101, 1)
-        combined_qe = np.concatenate([r_qe, g_qe, b_qe])
-        qe_unit = infer_legacy_unit(combined_qe, "qe")
         r_prepared = prepare_spectrum(
-            wavelengths, r_qe, "qe", unit=qe_unit, target_grid=target_wl
+            wavelengths, r_qe, "qe", unit=unit, target_grid=target_wl
         )
         g_prepared = prepare_spectrum(
-            wavelengths, g_qe, "qe", unit=qe_unit, target_grid=target_wl
+            wavelengths, g_qe, "qe", unit=unit, target_grid=target_wl
         )
         b_prepared = prepare_spectrum(
-            wavelengths, b_qe, "qe", unit=qe_unit, target_grid=target_wl
+            wavelengths, b_qe, "qe", unit=unit, target_grid=target_wl
         )
         r_interp = r_prepared.physical_values
         g_interp = g_prepared.physical_values
@@ -530,27 +618,27 @@ def import_qe_from_csv(uploaded_file, brand, model):
             'G': g_interp,
             'B': b_interp,
             'Manufacturer': brand,
-            'Name': model
+            'Name': model,
+            'Source File': getattr(uploaded_file, "name", "uploaded.csv"),
         })
 
         # Save file
         filename = f"{sanitize_filename(brand)}_{sanitize_filename(model)}_QE.tsv"
-        out_dir = Path("data/QE_data")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename
-        
-        # Save the file
-        try:
-            output_df.to_csv(out_path, sep='\t', index=False)
-        except Exception as e:
-            return False, f"Failed to save file to {out_path}: {str(e)}"
+        identity = f"{brand} {model}"
+        out_path = _publish_user_dataset(
+            output_df,
+            Path("QE_data"),
+            filename,
+            "qe",
+            identity,
+        )
             
         return True, (
             f"QE data saved successfully to {out_path}. "
             f"Diagnostics: {format_import_diagnostics(r_prepared, g_prepared, b_prepared)}."
         )
         
-    except ValueError as e:
+    except (ValueError, FileExistsError) as e:
         # These are validation errors we want to show to the user
         return False, str(e)
     except Exception as e:
@@ -563,7 +651,13 @@ def import_qe_from_csv(uploaded_file, brand, model):
 # REFLECTANCE/ABSORPTION IMPORT
 # ============================================================================
 
-def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, extrap_upper):
+def import_reflectance_absorption_from_csv(
+    uploaded_file,
+    meta,
+    extrap_lower,
+    extrap_upper,
+    unit: str | None = None,
+):
     """
     Import reflectance or absorption data from a CSV file.
     
@@ -584,6 +678,14 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         if not meta or not isinstance(meta, dict):
             return False, "Invalid metadata provided."
             
+        data_type = meta.get("data_type", "Reflectance")
+        if data_type.lower() != "reflectance":
+            return False, (
+                "Absorption cannot be imported as reflectance because no "
+                "conversion measurement model is approved."
+            )
+        unit = _validate_explicit_unit(unit, "reflectance")
+
         # Parse the CSV with detailed error handling
         try:
             raw_data = parse_csv(uploaded_file)
@@ -609,14 +711,13 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
             wavelengths,
             values,
             "reflectance",
+            unit=unit,
             extrapolation="constant" if extrap_lower or extrap_upper else "none",
             target_grid=new_wavelengths,
         )
         interpolated = prepared.raw_values
 
         # Create DataFrame
-        data_type = meta.get("data_type", "Reflectance")
-        
         # Create name and description arrays - only fill the first row, leave others empty
         name_array = [""] * len(new_wavelengths)
         description_array = [""] * len(new_wavelengths)
@@ -628,7 +729,8 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
             data_type: interpolated,
             'Extrapolated': prepared.extrapolated_mask,
             'Name': name_array,
-            'Description': description_array
+            'Description': description_array,
+            'Source File': getattr(uploaded_file, "name", "uploaded.csv"),
         })
 
         # Save file
@@ -638,22 +740,20 @@ def import_reflectance_absorption_from_csv(uploaded_file, meta, extrap_lower, ex
         filename = f"{sanitized}{suffix}.tsv"
         
         folder = "plant" if "plant" in meta.get("category", "").lower() else "other"
-        out_dir = Path("data/reflectors") / folder
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename
-        
-        # Save the file
-        try:
-            output_df.to_csv(out_path, sep='\t', index=False)
-        except Exception as e:
-            return False, f"Failed to save file to {out_path}: {str(e)}"
+        out_path = _publish_user_dataset(
+            output_df,
+            Path("reflectors") / folder,
+            filename,
+            "reflector",
+            meta.get("name", "Unknown"),
+        )
             
         return True, (
             f"{data_type} data saved successfully to {out_path}. "
             f"Diagnostics: {format_import_diagnostics(prepared)}."
         )
         
-    except ValueError as e:
+    except (ValueError, FileExistsError) as e:
         # These are validation errors we want to show to the user
         return False, str(e)
     except Exception as e:

@@ -6,7 +6,7 @@ import pickle
 import sys
 import warnings
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional, TypeVar, Callable
+from typing import Dict, List, Tuple, Any, Optional, TypeVar, Callable, Sequence
 
 # Third-party imports
 import numpy as np
@@ -19,6 +19,7 @@ from models import (
 )
 from models.constants import CACHE_DIR, DEFAULT_HEX_COLOR, INTERP_GRID
 from services.spectral_policy import PreparedSpectrum, prepare_spectrum
+from services.data_locations import discover_tsv_files, get_collection_roots
 
 
 def interpolate_to_standard_grid(wavelengths: np.ndarray, values: np.ndarray) -> np.ndarray:
@@ -59,20 +60,32 @@ Path(CACHE_DIR).mkdir(exist_ok=True)
 
 # Generic type for cached data
 T = TypeVar('T')
-CACHE_SCHEMA_VERSION = 2
-NORMALIZATION_POLICY_VERSION = "g2-2026-08-03"
+CACHE_SCHEMA_VERSION = 3
+NORMALIZATION_POLICY_VERSION = "g4-user-data-2026-08-03"
 
 
-def _cache_metadata(data_dir: Path) -> dict:
-    source_state = [
-        {
-            "path": path.relative_to(data_dir).as_posix(),
-            "size": path.stat().st_size,
-            "mtime_ns": path.stat().st_mtime_ns,
-        }
-        for path in sorted(data_dir.glob("**/*.tsv"), key=lambda item: item.as_posix())
-        if path.is_file()
-    ]
+def _coerce_data_dirs(data_folder: str | Path | Sequence[str | Path]) -> list[Path]:
+    if isinstance(data_folder, (str, Path)):
+        return [Path(data_folder)]
+    return [Path(folder) for folder in data_folder]
+
+
+def _cache_metadata(data_folders: Sequence[Path]) -> dict:
+    source_state = []
+    for root_index, data_dir in enumerate(data_folders):
+        if not data_dir.exists():
+            continue
+        source_state.extend(
+            {
+                "path": f"{root_index}:{path.relative_to(data_dir).as_posix()}",
+                "size": path.stat().st_size,
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+            for path in sorted(
+                data_dir.glob("**/*.tsv"), key=lambda item: item.as_posix()
+            )
+            if path.is_file()
+        )
     return {
         "schema_version": CACHE_SCHEMA_VERSION,
         "normalization_policy_version": NORMALIZATION_POLICY_VERSION,
@@ -81,7 +94,7 @@ def _cache_metadata(data_dir: Path) -> dict:
             "numpy": np.__version__,
             "pandas": pd.__version__,
         },
-        "source_root": data_dir.resolve().as_posix(),
+        "source_roots": [folder.resolve().as_posix() for folder in data_folders],
         "source_state": source_state,
     }
 
@@ -101,7 +114,7 @@ def parse_tsv_file(file_path: str | Path) -> pd.DataFrame:
     return df
 
 
-def cached_loader(cache_key: str, data_folder: str | Path, 
+def cached_loader(cache_key: str, data_folder: str | Path | Sequence[str | Path],
                   load_function: Callable[[], T]) -> T:
     """
     Simple caching mechanism for data loading.
@@ -114,9 +127,9 @@ def cached_loader(cache_key: str, data_folder: str | Path,
     Returns:
         Data from cache or freshly loaded
     """
-    data_dir = Path(data_folder)
+    data_dirs = _coerce_data_dirs(data_folder)
     cache_file = Path(CACHE_DIR) / f"{cache_key}.pkl"
-    metadata = _cache_metadata(data_dir)
+    metadata = _cache_metadata(data_dirs)
 
     if cache_file.exists():
         try:
@@ -147,6 +160,13 @@ def cached_loader(cache_key: str, data_folder: str | Path,
         )
         
     return data
+
+
+def invalidate_collection_cache(cache_key: str) -> None:
+    """Invalidate one generated collection cache after a successful import."""
+    cache_file = Path(CACHE_DIR) / f"{cache_key}.pkl"
+    if cache_file.exists():
+        cache_file.unlink()
 
 
 # Helper functions for empty collection creation
@@ -261,17 +281,19 @@ def _load_filter_collection_from_files() -> FilterCollection:
     Returns:
         FilterCollection object
     """
-    data_folder = Path("data") / "filters_data"
-    data_folder.mkdir(exist_ok=True, parents=True)
-    
-    files = list(data_folder.glob("**/*.tsv"))
+    files = discover_tsv_files("filters_data", recursive=True)
     meta_list, matrix, masks = [], [], []
     filters = []
+    identities = set()
     
     for path in files:
         result = safely_load_file(path, _process_filter_file)
         if result:
             metadata, transmission, mask, filter_obj = result
+            identity = str(filter_obj)
+            if identity in identities:
+                continue
+            identities.add(identity)
             meta_list.append(metadata)
             matrix.append(transmission)
             masks.append(mask)
@@ -307,7 +329,7 @@ def load_filter_collection() -> FilterCollection:
     try:
         cached_data = cached_loader(
             cache_key="filter_data",
-            data_folder=str(Path("data") / "filters_data"),
+            data_folder=get_collection_roots("filters_data"),
             load_function=_create_cached_data
         )
         
@@ -387,10 +409,7 @@ def _load_quantum_efficiencies_from_files() -> Tuple[List[str], Dict[str, Dict[s
     Returns:
         Tuple of (qe_keys, qe_data, default_key)
     """
-    folder = Path('data') / 'QE_data'
-    folder.mkdir(exist_ok=True, parents=True)
-    
-    files = list(folder.glob('*.tsv'))
+    files = discover_tsv_files("QE_data")
     qe_dict = {}
     default_key = None
 
@@ -398,6 +417,8 @@ def _load_quantum_efficiencies_from_files() -> Tuple[List[str], Dict[str, Dict[s
         result = safely_load_file(path, _process_qe_file)
         if result:
             key, channel_data, is_default, _diagnostic_metadata = result
+            if key in qe_dict:
+                continue
             qe_dict[key] = channel_data
             if is_default and default_key is None:
                 default_key = key
@@ -409,7 +430,7 @@ def load_quantum_efficiencies() -> Tuple[List[str], Dict[str, Dict[str, np.ndarr
     """Load quantum efficiency data for camera sensors."""
     return cached_loader(
         cache_key="qe_data",
-        data_folder=Path('data') / 'QE_data',
+        data_folder=get_collection_roots("QE_data"),
         load_function=_load_quantum_efficiencies_from_files
     )
 
@@ -439,6 +460,10 @@ def _process_illuminant_file(path: Path) -> Optional[Tuple[str, np.ndarray, Opti
     )
     interp = prepared.physical_values
     name = path.stem
+    if 'Name' in df.columns and not df['Name'].dropna().empty:
+        candidate = str(df['Name'].dropna().iloc[0]).strip()
+        if candidate:
+            name = candidate
     
     # Extract description if available
     description = None
@@ -455,15 +480,14 @@ def _load_illuminant_collection_from_files() -> Tuple[Dict[str, np.ndarray], Dic
     Returns:
         Tuple of (illuminants, metadata)
     """
-    folder = Path('data') / 'illuminants'
-    folder.mkdir(exist_ok=True, parents=True)
-
     illum, meta = {}, {}
     
-    for path in folder.glob('*.tsv'):
+    for path in discover_tsv_files("illuminants"):
         result = safely_load_file(path, _process_illuminant_file)
         if result:
             name, interp, description, _prepared = result
+            if name in illum:
+                continue
             illum[name] = interp
             if description:
                 meta[name] = description
@@ -475,7 +499,7 @@ def load_illuminant_collection() -> Tuple[Dict[str, np.ndarray], Dict[str, str]]
     """Load illuminant collection."""
     return cached_loader(
         cache_key="illuminants",
-        data_folder=Path('data') / 'illuminants',
+        data_folder=get_collection_roots("illuminants"),
         load_function=_load_illuminant_collection_from_files
     )
 
@@ -540,17 +564,18 @@ def _load_reflector_collection_from_files() -> ReflectorCollection:
     Returns:
         ReflectorCollection object
     """
-    folder = Path('data') / 'reflectors'
-    folder.mkdir(exist_ok=True, parents=True)
-
-    files = list(folder.glob("**/*.tsv"))
+    files = discover_tsv_files("reflectors", recursive=True)
     reflectors = []
     matrix = []
+    identities = set()
 
     for path in files:
         result = safely_load_file(path, _process_reflector_file)
         if result:
             name, prepared = result
+            if name in identities:
+                continue
+            identities.add(name)
             reflectors.append(ReflectorSpectrum(
                 name=name,
                 values=prepared.physical_values,
@@ -572,6 +597,6 @@ def load_reflector_collection() -> ReflectorCollection:
     """Load reflector collection."""
     return cached_loader(
         cache_key="reflectors",
-        data_folder=Path('data') / 'reflectors',
+        data_folder=get_collection_roots("reflectors"),
         load_function=_load_reflector_collection_from_files
     )

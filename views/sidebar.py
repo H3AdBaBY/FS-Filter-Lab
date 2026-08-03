@@ -35,8 +35,13 @@ def filter_selection(
         List of selected filter display names
     """
     # --- Prepare default value for widget (including pending selections) ---
-    current_selection = app_state.selected_filters
-    # Note: Pending selections are handled directly through session_state for widget compatibility
+    current_selection = list(app_state.selected_filters)
+    pending = st.session_state.pop("_pending_selected_filters", [])
+    if pending:
+        current_selection = list(dict.fromkeys(current_selection + list(pending)))
+        st.session_state["selected_filters"] = current_selection
+    if st.session_state.pop("_close_advanced_search", False):
+        st.session_state["show_advanced_search"] = False
 
     # --- Widget logic ---
     filter_display_names = filter_collection.get_display_names()

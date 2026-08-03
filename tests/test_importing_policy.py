@@ -26,6 +26,7 @@ def test_filter_import_preserves_raw_excursions_and_reports_diagnostics(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FS_FILTERLAB_USER_DATA_DIR", str(tmp_path / "user_data"))
     upload = StringIO("400;-1\n500;\n600;120\n")
     metadata = {
         "manufacturer": "Fixture Lab",
@@ -34,13 +35,15 @@ def test_filter_import_preserves_raw_excursions_and_reports_diagnostics(
         "hex_color": "#123456",
     }
 
-    success, message = import_filter_from_csv(upload, metadata, False, False)
+    success, message = import_filter_from_csv(
+        upload, metadata, False, False, "percent"
+    )
 
     assert success
     assert "unit_interpretation" in message
     assert "physical_bounds_clipped" in message
     assert "nonfinite_values_preserved" in message
-    output = next((tmp_path / "data" / "filters_data").rglob("*.tsv"))
+    output = next((tmp_path / "user_data" / "filters_data").rglob("*.tsv"))
     imported = pd.read_csv(output, sep="\t")
     indexed = imported.set_index("Wavelength")["Transmittance"]
     assert indexed.loc[400] == -0.01
@@ -52,6 +55,7 @@ def test_import_rejects_nonfinite_wavelength_without_shifting_values(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FS_FILTERLAB_USER_DATA_DIR", str(tmp_path / "user_data"))
     upload = StringIO("400;20\n;50\n600;80\n")
     metadata = {
         "manufacturer": "Fixture Lab",
@@ -60,17 +64,20 @@ def test_import_rejects_nonfinite_wavelength_without_shifting_values(
         "hex_color": "#123456",
     }
 
-    success, message = import_filter_from_csv(upload, metadata, False, False)
+    success, message = import_filter_from_csv(
+        upload, metadata, False, False, "percent"
+    )
 
     assert not success
     assert "Wavelength samples must be finite" in message
-    assert not (tmp_path / "data").exists()
+    assert not (tmp_path / "user_data").exists()
 
 
 def test_filter_import_extrapolation_mask_survives_loader_round_trip(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FS_FILTERLAB_USER_DATA_DIR", str(tmp_path / "user_data"))
     upload = StringIO("400;20\n500;50\n600;80\n")
     metadata = {
         "manufacturer": "Fixture Lab",
@@ -79,9 +86,11 @@ def test_filter_import_extrapolation_mask_survives_loader_round_trip(
         "hex_color": "#123456",
     }
 
-    success, _ = import_filter_from_csv(upload, metadata, True, False)
+    success, _ = import_filter_from_csv(
+        upload, metadata, True, False, "percent"
+    )
     assert success
-    output = next((tmp_path / "data" / "filters_data").rglob("*.tsv"))
+    output = next((tmp_path / "user_data" / "filters_data").rglob("*.tsv"))
     saved = pd.read_csv(output, sep="\t")
     assert saved.loc[saved["Wavelength"] == 399, "Extrapolated"].item()
     assert not saved.loc[saved["Wavelength"] == 400, "Extrapolated"].item()
