@@ -1,7 +1,7 @@
 # FS FilterLab 1.0.0 release checklist
 
-Status: **Gate 5A/Gate 5B automated verification complete; Gate 5C manual
-keyboard and owner approvals pending**
+Status: **Gate 5A/Gate 5B automated verification and Gate 5C local acceptance
+complete; external publication approval pending**
 
 Publication authority: **Not granted**
 
@@ -29,26 +29,30 @@ Automated result recorded 2026-08-03 on macOS 26.5.2 arm64 with Python
 
 Record:
 
-- Date:
-- Tester:
-- macOS version:
-- Browser/version:
+- Date: 2026-08-03
+- Tester: Owner
+- macOS version: 26.5.2, Apple Silicon
+- Browser/version: Codex in-app browser (embedded browser version not exposed)
 - Archive SHA-256:
+  - `FS-Filter-Lab-1.0.0.tar.gz`:
+    `cf37b42262df947822f1144fe3aa17c57e6f1dd5ad7dc1bab76a222a04ee3df0`
+  - `FS-Filter-Lab-1.0.0.zip`:
+    `1bd3334cebd2741d560e863cd8a9b8e31c0a98034169490e1795e2568c8db2d4`
 
 Without using a pointer:
 
-- [ ] Open/close filter controls at 1280, 768, and 390 px.
-- [ ] Select and remove a named filter.
-- [ ] Change its stack count.
-- [ ] Complete advanced search Done and Cancel paths.
-- [ ] Navigate all four importer tabs and their labeled controls.
-- [ ] Toggle sensor-response balance and RGB visibility.
-- [ ] Enable, edit, and reset the channel mixer.
-- [ ] Select a surface and reach both preview captions.
-- [ ] Generate and activate the current report download.
-- [ ] Focus order is logical, focus is visible, and no keyboard trap occurs.
+- [x] Open/close filter controls at 1280, 768, and 390 px.
+- [x] Select and remove a named filter.
+- [x] Change its stack count.
+- [x] Complete advanced search Done and Cancel paths.
+- [x] Navigate all four importer tabs and their labeled controls.
+- [x] Toggle sensor-response balance and RGB visibility.
+- [x] Enable, edit, and reset the channel mixer.
+- [x] Select a surface and reach both preview captions.
+- [x] Generate and activate the current report download.
+- [x] Focus order is logical, focus is visible, and no keyboard trap occurs.
 
-Result/blockers:
+Result/blockers: **Passed.** The owner reported no keyboard blocker.
 
 ## Accessibility scope
 
@@ -59,8 +63,8 @@ blockers.
 
 ## Owner gates
 
-- [ ] Owner accepts the dependency and data-provenance evidence.
-- [ ] Owner accepts `docs/Known-Limitations.md` and release notes.
-- [ ] Owner approves the exact candidate archives and checksums.
+- [x] Owner accepts the dependency and data-provenance evidence.
+- [x] Owner accepts `docs/Known-Limitations.md` and release notes.
+- [x] Owner approves the exact candidate archives and checksums.
 - [ ] Owner separately approves the exact tag, remote, and assets before any
   tag, push, or GitHub release.

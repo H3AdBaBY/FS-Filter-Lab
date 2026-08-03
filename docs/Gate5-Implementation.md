@@ -1,7 +1,7 @@
 # Gate 5 implementation record
 
-Status: **Gate 5A and Gate 5B automated implementation complete; Gate 5C
-manual acceptance and publication pending**
+Status: **Gate 5A, Gate 5B, and Gate 5C local acceptance complete; external
+publication approval pending**
 
 Version: `1.0.0`
 
@@ -12,10 +12,10 @@ Publication authority: **Not granted**
 The owner approved `G5-D001` through `G5-D012` as written. That approval
 authorizes local Gate 5A release evidence and Gate 5B deterministic candidate
 construction. It does not authorize a tag, push, GitHub release, or other
-external publication. Gate 5C still requires the recorded manual keyboard
-smoke, candidate approval, and separate publication approval. The approved
-amendment makes formal VoiceOver verification and accessibility conformance
-outside the v1 scope.
+external publication. The owner subsequently approved the exact candidate and
+reported the manual keyboard smoke passed on 2026-08-03. Separate publication
+approval remains required. The approved amendment makes formal VoiceOver
+verification and accessibility conformance outside the v1 scope.
 
 ## Gate 5A evidence
 
@@ -30,8 +30,9 @@ outside the v1 scope.
   corpus reconciliation without inventing missing per-curve attribution.
 - `docs/Known-Limitations.md` is the authoritative product and scientific
   limitation record linked from release-facing documentation.
-- `docs/Release-Checklist.md` keeps manual keyboard and owner publication
-  actions explicit and incomplete.
+- `docs/Release-Checklist.md` records the completed manual keyboard and exact
+  candidate acceptance while keeping external publication approval explicit
+  and incomplete.
 - macOS Apple Silicon is the sole supported platform. Windows launchers and
   Linux/Windows compatibility claims are excluded; other platforms are
   unsupported without being deliberately blocked in code.
@@ -56,7 +57,7 @@ outside the v1 scope.
 The complete command passed on 2026-08-03 using Python 3.12.13 on the reference
 arm64 Mac running macOS 26.5.2. Evidence included:
 
-- 63 deterministic tests and the complete Gate 4 launcher/workflow matrix;
+- 64 deterministic tests and the complete Gate 4 launcher/workflow matrix;
 - 1,566 discovered and accepted bundled TSV files, with zero skipped,
   duplicate, or invalid entries;
 - 48 exact runtime distributions and four test-only distributions with zero
@@ -71,7 +72,8 @@ arm64 Mac running macOS 26.5.2. Evidence included:
   budget.
 
 The command writes the exact candidate hashes and machine-readable environment
-record to ignored `dist/SHA256SUMS` and `dist/release-evidence.json`. Gate 5C
-remains blocked on the manual keyboard record and explicit owner candidate
-approval. VoiceOver verification is not a release gate. No tag, push, GitHub
-release, or external publication was performed.
+record to ignored `dist/SHA256SUMS` and `dist/release-evidence.json`. The owner
+accepted those exact hashes and reported the manual keyboard smoke passed on
+2026-08-03. Gate 5C local acceptance is therefore complete. VoiceOver
+verification is not a release gate. Publication authority remains ungranted;
+no tag, push, GitHub release, or external publication was performed.
