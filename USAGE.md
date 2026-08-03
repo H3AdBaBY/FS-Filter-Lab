@@ -102,3 +102,8 @@ response are reported rather than replaced by fabricated patches.
 ```bash
 PYTHON_BIN=python3.12 bash scripts/run_gate4_verification.sh
 ```
+
+For release-specific platform, scientific, provenance, privacy, and
+accessibility constraints, read
+[Known Limitations](docs/Known-Limitations.md). Bundled-curve provenance is
+described separately in [Bundled Data Provenance](docs/Data-Provenance.md).

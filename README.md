@@ -1,5 +1,7 @@
 # FS FilterLab
 
+Current release candidate: **1.0.0**.
+
 FS FilterLab is a local Streamlit application for comparing optical filters,
 filter stacks, camera quantum-efficiency (QE) curves, illuminants, and surface
 reflectance spectra. Reflector patches are illustrative sensor responses, not
@@ -109,8 +111,13 @@ runs the scientific, dataset, search/import, processing, state, Streamlit, PNG,
 performance, and launcher checks; runs `pip check`; and removes temporary state.
 It reconciles all 1,566 bundled TSV files without changing them.
 
-See [USAGE.md](USAGE.md), [TECHNICAL.md](TECHNICAL.md), and
-[docs/Gate4-Implementation.md](docs/Gate4-Implementation.md) for details.
+For the release boundary, see
+[Known Limitations](docs/Known-Limitations.md),
+[Bundled Data Provenance](docs/Data-Provenance.md), and
+[Third-party Notices](THIRD_PARTY_NOTICES.md). See [USAGE.md](USAGE.md),
+[TECHNICAL.md](TECHNICAL.md), and
+[docs/Gate4-Implementation.md](docs/Gate4-Implementation.md) for operating and
+verification details.
 
 ## License
 

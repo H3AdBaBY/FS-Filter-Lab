@@ -99,3 +99,9 @@ runs:
 Manual browser evidence covers keyboard operation, accessible structure, and
 1280 px, 768 px, and 390 px layouts. The implementation record is
 `docs/Gate4-Implementation.md`.
+
+Release dependency versions and retained license evidence are recorded in
+`dependency-licenses.json` and `THIRD_PARTY_NOTICES.md`. Streamlit usage
+statistics are disabled by `.streamlit/config.toml`; dependency installation
+may contact the configured package index, while normal application use is
+local. The authoritative release boundary is `docs/Known-Limitations.md`.

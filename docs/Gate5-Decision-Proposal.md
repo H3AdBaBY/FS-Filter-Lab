@@ -1,6 +1,6 @@
 # Gate 5 release decision proposal
 
-Status: **Proposed — owner approval required before implementation**
+Status: **Approved for Gate 5A and Gate 5B implementation**
 
 Prerequisites: Gate 2 scientific policies, Gate 3 vertical workflow, and Gate 4
 parity implementation complete
@@ -279,4 +279,6 @@ Gate 5 exits only when:
 
 ## Approval record
 
-No Gate 5 decision is approved yet.
+The owner approved `G5-D001` through `G5-D012` as written. This authorizes
+local Gate 5A and Gate 5B implementation only. It does not authorize a tag,
+push, GitHub release, or other external publication.
