@@ -454,22 +454,6 @@
         {
           "path": "packaging-26.2.dist-info/licenses/LICENSE.BSD",
           "sha256": "b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5"
-        },
-        {
-          "path": "packaging/licenses/__init__.py",
-          "sha256": "fc9c745d1883ff9f296a5b169f22eb2ee879f59a4608f20f5cb29d668f4e26f4"
-        },
-        {
-          "path": "packaging/licenses/__pycache__/__init__.cpython-312.pyc",
-          "sha256": "6b9df3d89b66c00d57b697d7a482d839ccec05f49e1827f9d0de87722ae37a8c"
-        },
-        {
-          "path": "packaging/licenses/__pycache__/_spdx.cpython-312.pyc",
-          "sha256": "98bf9e9b013b4d94d697738035340449afbd06dd760eb7f9c80c2a5862b85a52"
-        },
-        {
-          "path": "packaging/licenses/_spdx.py",
-          "sha256": "596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314"
         }
       ],
       "name": "packaging",

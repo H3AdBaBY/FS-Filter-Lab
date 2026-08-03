@@ -79,7 +79,7 @@ def license_files(
         path_text = str(relative).casefold()
         if not (
             lowered.startswith(("license", "copying", "notice"))
-            or "/licenses/" in f"/{path_text}"
+            or ".dist-info/licenses/" in path_text
         ):
             continue
         path = distribution.locate_file(relative)

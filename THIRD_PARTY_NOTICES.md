@@ -35,7 +35,7 @@ This is a deterministic engineering inventory, not legal advice.
 | matplotlib | 3.11.1 | Yes | PSF-2.0 | 3 |
 | narwhals | 2.24.0 | No | MIT | 1 |
 | numpy | 2.5.1 | Yes | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | 20 |
-| packaging | 26.2 | No | Apache-2.0 OR BSD-2-Clause | 7 |
+| packaging | 26.2 | No | Apache-2.0 OR BSD-2-Clause | 3 |
 | pandas | 3.0.5 | Yes | BSD-3-Clause | 1 |
 | pillow | 12.3.0 | No | MIT-CMU | 1 |
 | plotly | 6.9.0 | Yes | MIT | 1 |
